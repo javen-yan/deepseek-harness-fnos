@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-12
+version=0.1.0-rc.6-13
 display_name=DeepSeek Harness
 desc=DeepSeek Harness Web UI native package for fnOS.
 source=thirdparty
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=Harden path gateway sessions and event socket delivery for Settings plugins and realtime message rendering.
+changelog=Use native DSH WebSocket transport and single active gateway entry for Settings, plugins, market, and realtime rendering.

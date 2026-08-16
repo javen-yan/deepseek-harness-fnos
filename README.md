@@ -115,10 +115,13 @@ Gateway source is intentionally not maintained in this repository. It lives in [
 
 `build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
 
-The fnOS App Center entry still opens the path mode UI by default. Because the fnOS unified gateway does not reliably proxy WebSocket Upgrade requests to app sockets, path mode also starts the authenticated port gateway and rewrites Harness realtime WebSocket URLs to `http://<NAS_IP>:3081/`:
+The fnOS App Center entry opens one gateway mode at a time. Path mode uses the
+fnOS unified gateway socket; port mode listens on the configured LAN port.
+Harness realtime traffic stays on the same selected entry and uses the official
+WebSocket transport:
 
-- Path UI: `http://<NAS_IP>:5666/app/deepseek_harness/`
-- Realtime/port fallback: `http://<NAS_IP>:3081/`
+- Path mode: `http://<NAS_IP>:5666/app/deepseek_harness/`
+- Port mode: `http://<NAS_IP>:3081/`
 
 The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Port mode does not create `app.sock`.
 
