@@ -46,6 +46,31 @@ function gatewayShim() {
   return `<script>(() => {
   const prefix = ${prefix};
   const apiPath = ${apiPath};
+  const fallbackRandomUUID = () => {
+    const bytes = new Uint8Array(16);
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0"));
+    return [
+      hex.slice(0, 4).join(""),
+      hex.slice(4, 6).join(""),
+      hex.slice(6, 8).join(""),
+      hex.slice(8, 10).join(""),
+      hex.slice(10, 16).join("")
+    ].join("-");
+  };
+  if (window.crypto && typeof window.crypto.randomUUID !== "function") {
+    try {
+      Object.defineProperty(window.crypto, "randomUUID", { value: fallbackRandomUUID, configurable: true });
+    } catch {
+      if (typeof Crypto !== "undefined" && Crypto.prototype) Crypto.prototype.randomUUID = fallbackRandomUUID;
+    }
+  }
   const sameOriginApi = (url) => {
     const next = new URL(url, window.location.href);
     if (next.origin === window.location.origin && (next.pathname === apiPath || next.pathname.startsWith(apiPath + "/"))) {
@@ -62,13 +87,29 @@ function gatewayShim() {
     return nativeFetch(sameOriginApi(input), init);
   };
   const NativeWebSocket = window.WebSocket;
-  window.WebSocket = new Proxy(NativeWebSocket, {
-    construct(Target, args) {
-      if (args.length > 0) args[0] = sameOriginApi(args[0]).toString();
-      return Reflect.construct(Target, args);
+  const GatewayWebSocket = function(url, protocols) {
+    const next = sameOriginApi(url).toString();
+    return protocols === undefined ? new NativeWebSocket(next) : new NativeWebSocket(next, protocols);
+  };
+  GatewayWebSocket.prototype = NativeWebSocket.prototype;
+  for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) {
+    Object.defineProperty(GatewayWebSocket, key, { value: NativeWebSocket[key] });
+  }
+  window.WebSocket = GatewayWebSocket;
+  if (window.EventSource) {
+    const NativeEventSource = window.EventSource;
+    const GatewayEventSource = function(url, config) {
+      return new NativeEventSource(sameOriginApi(url).toString(), config);
+    };
+    GatewayEventSource.prototype = NativeEventSource.prototype;
+    window.EventSource = GatewayEventSource;
+  }
+  if (navigator.serviceWorker) {
+    const nativeRegister = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+    navigator.serviceWorker.register = (scriptURL, options) => {
+      return nativeRegister(sameOriginApi(scriptURL).toString(), options);
     }
-  });
-  window.WebSocket.prototype = NativeWebSocket.prototype;
+  }
 })()</script>`;
 }
 

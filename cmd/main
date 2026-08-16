@@ -22,6 +22,7 @@ SOCKET_PATH="$APP_DIR/app.sock"
 GATEWAY_PREFIX="/app/deepseek_harness"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
+FNOS_GATEWAY_PORT="${FNOS_GATEWAY_PORT:-5666}"
 
 write_error() {
   local message="$1"
@@ -56,6 +57,42 @@ require_dependencies() {
   if [ ! -f "$PNPM_BIN" ]; then
     write_error "DeepSeek Harness runtime is missing pnpm. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
+  fi
+}
+
+append_trusted_host() {
+  local host="$1"
+  [ -n "$host" ] || return 0
+  case " $TRUSTED_HOST_ARGS " in
+    *" --trusted-host $host "*)
+      ;;
+    *)
+      set -- $TRUSTED_HOST_ARGS --trusted-host "$host"
+      TRUSTED_HOST_ARGS="$*"
+      ;;
+  esac
+}
+
+build_trusted_host_args() {
+  TRUSTED_HOST_ARGS=""
+
+  for trusted_host in ${DSH_TRUSTED_HOSTS:-}; do
+    append_trusted_host "$trusted_host"
+  done
+
+  if command -v hostname >/dev/null 2>&1; then
+    for lan_ip in $(hostname -I 2>/dev/null || true); do
+      case "$lan_ip" in
+        127.*|169.254.*|"")
+          ;;
+        *:*)
+          ;;
+        *)
+          append_trusted_host "$lan_ip"
+          append_trusted_host "${lan_ip}:${FNOS_GATEWAY_PORT}"
+          ;;
+      esac
+    done
   fi
 }
 
@@ -114,10 +151,9 @@ start_app() {
 
   if ! is_dsh_running; then
     set -- "$DSH_BIN" web --host "$HOST" --port "$PORT"
-    if [ -n "$DSH_TRUSTED_HOSTS" ]; then
-      for trusted_host in $DSH_TRUSTED_HOSTS; do
-        set -- "$@" --trusted-host "$trusted_host"
-      done
+    build_trusted_host_args
+    if [ -n "$TRUSTED_HOST_ARGS" ]; then
+      set -- "$@" $TRUSTED_HOST_ARGS
     fi
 
     nohup "$@" >> "$LOGFILE" 2>&1 &

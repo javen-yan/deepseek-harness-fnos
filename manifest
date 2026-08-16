@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-3
+version=0.1.0-rc.6-4
 display_name=DeepSeek Harness
 desc=DeepSeek Harness Web UI native package for fnOS.
 source=thirdparty
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=Fix fnOS gateway API/WebSocket path handling.
+changelog=Fix fnOS gateway trust and browser API shims.
