@@ -27,13 +27,11 @@ GATEWAY_PORT="${GATEWAY_PORT:-3081}"
 GATEWAY_PATH_PORT="${GATEWAY_PATH_PORT:-5666}"
 GATEWAY_HOST="${GATEWAY_HOST:-0.0.0.0}"
 GATEWAY_SESSION_DAYS="${GATEWAY_SESSION_DAYS:-30}"
-GATEWAY_ADMIN_SESSION_DAYS="${GATEWAY_ADMIN_SESSION_DAYS:-30}"
-GATEWAY_PAIRING_TTL_SECONDS="${GATEWAY_PAIRING_TTL_SECONDS:-300}"
 GATEWAY_EXTRA_ACCESS_PATHS="${GATEWAY_EXTRA_ACCESS_PATHS:-}"
 ADMIN_PASSWORD_FILE="$DATA_DIR/gateway/admin-password.json"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
-GATEWAY_PLUGIN_DIR="$RUNTIME_DIR/node_modules/@fnos/deepseek-harness-gateway"
+ACCESS_PLUGIN_DIR="$RUNTIME_DIR/node_modules/@fnos/dsh-fnos-access"
 
 write_error() {
   local message="$1"
@@ -110,14 +108,6 @@ NODE
   esac
   case "$GATEWAY_SESSION_DAYS" in
     ''|*[!0-9]*) write_error "GATEWAY_SESSION_DAYS must be a number."; exit 1 ;;
-    *) ;;
-  esac
-  case "$GATEWAY_ADMIN_SESSION_DAYS" in
-    ''|*[!0-9]*) write_error "GATEWAY_ADMIN_SESSION_DAYS must be a number."; exit 1 ;;
-    *) ;;
-  esac
-  case "$GATEWAY_PAIRING_TTL_SECONDS" in
-    ''|*[!0-9]*) write_error "GATEWAY_PAIRING_TTL_SECONDS must be a number."; exit 1 ;;
     *) ;;
   esac
 }
@@ -217,14 +207,43 @@ require_dependencies() {
     write_error "DeepSeek Harness runtime is missing pnpm. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
-  if [ ! -f "$GATEWAY_PLUGIN_DIR/lib/gateway.js" ]; then
-    write_error "DeepSeek Harness gateway plugin is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
+  if [ ! -f "$ACCESS_PLUGIN_DIR/lib/index.js" ] || [ ! -f "$ACCESS_PLUGIN_DIR/lib/edge-proxy.cjs" ]; then
+    write_error "DeepSeek Harness fnOS access package is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
 }
 
+migrate_legacy_gateway_profile() {
+  profile_web_dir="${PROFILE_DIR:-$DATA_DIR/profiles}/dsh/profiles/web"
+  package_json="$profile_web_dir/package.json"
+  [ -f "$package_json" ] || return 0
+
+  node - "$package_json" <<'NODE' >> "$GATEWAY_INSTALL_LOGFILE" 2>&1 || true
+const fs = require("fs");
+const file = process.argv[2];
+const packageJson = JSON.parse(fs.readFileSync(file, "utf8"));
+let changed = false;
+if (packageJson.dependencies && packageJson.dependencies["@fnos/deepseek-harness-gateway"]) {
+  delete packageJson.dependencies["@fnos/deepseek-harness-gateway"];
+  changed = true;
+}
+const bundles = packageJson.dsh && packageJson.dsh.profile && packageJson.dsh.profile.bundles;
+if (Array.isArray(bundles)) {
+  const filtered = bundles.filter((item) => item !== "@fnos/deepseek-harness-gateway");
+  if (filtered.length !== bundles.length) {
+    packageJson.dsh.profile.bundles = filtered;
+    changed = true;
+  }
+}
+if (changed) {
+  fs.writeFileSync(file, `${JSON.stringify(packageJson, null, 2)}\n`);
+  console.log(`${new Date().toISOString()} removed legacy @fnos/deepseek-harness-gateway from web profile`);
+}
+NODE
+}
+
 install_gateway_plugin_once() {
-  marker="$DATA_DIR/gateway-plugin-install.done"
+  marker="$DATA_DIR/fnos-access-plugin-install.done"
   if [ -f "$marker" ]; then
     return 0
   fi
@@ -243,9 +262,9 @@ EOF
     chmod +x "$BIN_DIR/pnpm"
     export PATH="$BIN_DIR:$PATH"
     cd "$RUNTIME_DIR" || exit 0
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing bundled gateway plugin from $GATEWAY_PLUGIN_DIR..." >> "$GATEWAY_INSTALL_LOGFILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing bundled fnOS access plugin from $ACCESS_PLUGIN_DIR..." >> "$GATEWAY_INSTALL_LOGFILE"
     set +e
-    "$DSH_BIN" plugin --profile web add "file:$GATEWAY_PLUGIN_DIR" >> "$GATEWAY_INSTALL_LOGFILE" 2>&1
+    "$DSH_BIN" plugin --profile web add "file:$ACCESS_PLUGIN_DIR" >> "$GATEWAY_INSTALL_LOGFILE" 2>&1
     status="$?"
     set -e
     echo "$(date '+%Y-%m-%d %H:%M:%S') - gateway plugin installer exited with $status" >> "$GATEWAY_INSTALL_LOGFILE"
@@ -325,6 +344,7 @@ start_app() {
   export XDG_DATA_HOME="$PROFILE_DIR/data"
   export XDG_CACHE_HOME="$TMP_DIR/cache"
 
+  migrate_legacy_gateway_profile
   install_gateway_plugin_once
 
   if ! is_dsh_running; then
@@ -336,6 +356,9 @@ start_app() {
 
     current_dir="$(pwd)"
     cd "$WORKSPACE_DIR"
+    FNOS_ACCESS_PREFIX="$([ "$GATEWAY_ENABLE_PATH" = "1" ] && printf "%s" "$GATEWAY_PREFIX" || printf "")" \
+    FNOS_ACCESS_PASSWORD_FILE="$ADMIN_PASSWORD_FILE" \
+    FNOS_ACCESS_SESSION_MAX_AGE_SECONDS="$((GATEWAY_SESSION_DAYS * 24 * 60 * 60))" \
     nohup "$@" >> "$LOGFILE" 2>&1 &
     echo "$!" > "$PIDFILE"
     cd "$current_dir"
@@ -369,10 +392,6 @@ start_app() {
 	    GATEWAY_DATA_DIR="$DATA_DIR" \
 	    GATEWAY_LOGFILE="$PROXY_LOGFILE" \
 	    GATEWAY_ACCESS_LOGFILE="$PROXY_ACCESS_LOGFILE" \
-	    GATEWAY_SESSION_MAX_AGE_SECONDS="$((GATEWAY_SESSION_DAYS * 24 * 60 * 60))" \
-	    GATEWAY_ADMIN_SESSION_MAX_AGE_SECONDS="$((GATEWAY_ADMIN_SESSION_DAYS * 24 * 60 * 60))" \
-	    GATEWAY_ADMIN_PASSWORD_FILE="$ADMIN_PASSWORD_FILE" \
-	    GATEWAY_PAIRING_TTL_MS="$((GATEWAY_PAIRING_TTL_SECONDS * 1000))" \
 	    GATEWAY_WRITABLE_DIRS="$WRITABLE_DIRS" \
 	    INSTALL_LOGFILE="$LOG_DIR/install.log" \
 	    GATEWAY_INSTALL_LOGFILE="$GATEWAY_INSTALL_LOGFILE" \

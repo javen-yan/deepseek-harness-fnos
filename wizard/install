@@ -6,7 +6,7 @@
         "type": "password",
         "field": "wizard_admin_password",
         "label": "管理密码",
-        "desc": "用于进入网关管理页查看和刷新一次性配对码，至少 8 位。",
+        "desc": "用于打开 DeepSeek Harness 远程访问入口，至少 8 位。",
         "rules": [
           {
             "required": true,

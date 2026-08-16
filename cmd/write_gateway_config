@@ -8,7 +8,7 @@ DATA_DIR="$TRIM_PKGVAR"
 CONFIG_DIR="$DATA_DIR/gateway"
 CONFIG_FILE="$CONFIG_DIR/gateway.conf"
 PASSWORD_FILE="$CONFIG_DIR/admin-password.json"
-ADMIN_AUTH_JS="$APP_DIR/runtime/node_modules/@fnos/deepseek-harness-gateway/lib/admin-auth.js"
+ADMIN_AUTH_JS="$APP_DIR/runtime/node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs"
 
 write_error() {
   local message="$1"
@@ -91,8 +91,6 @@ esac
     echo "GATEWAY_PORT=$(shell_quote "$gateway_port")"
   fi
   echo "GATEWAY_SESSION_DAYS='30'"
-  echo "GATEWAY_ADMIN_SESSION_DAYS='30'"
-  echo "GATEWAY_PAIRING_TTL_SECONDS='300'"
   echo "GATEWAY_EXTRA_ACCESS_PATHS=$(shell_quote "$extra_access_paths")"
 } > "$CONFIG_FILE"
 

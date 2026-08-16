@@ -28,12 +28,12 @@ TRIM_APPDEST/
     package-lock.json
     node_modules/
       .bin/dsh
-      @fnos/deepseek-harness-gateway/
+      @fnos/dsh-fnos-access/
         package.json
-        lib/gateway.js
-        static/admin-login.html
-        static/admin.html
-        static/login.html
+        lib/index.js
+        lib/edge-proxy.cjs
+        lib/admin-auth.cjs
+        scripts/patch-dsh-core.cjs
       node-pty/build/Release/pty.node
       @deepseek-ai/dsh-web-frontend/dist/index.html
       @deepseek-ai/dsh-app-boot/lib/index.js
@@ -109,9 +109,9 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 - Gateway install log: `TRIM_PKGVAR/logs/gateway-install.log`
 - dshmarket log: `TRIM_PKGVAR/logs/dshmarket-install.log`
 
-`192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the bundled fnOS gateway package.
+`192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the bundled fnOS access package.
 
-Gateway source is intentionally not maintained in this repository. It lives in [`javen-yan/dsh-remote-gateway`](https://github.com/javen-yan/dsh-remote-gateway) and is consumed as the npm package `@fnos/deepseek-harness-gateway`.
+Gateway/access source is intentionally maintained separately. It lives in [`javen-yan/dsh-remote-gateway`](https://github.com/javen-yan/dsh-remote-gateway) and is consumed as the npm package `@fnos/dsh-fnos-access`.
 
 `build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
 
@@ -125,18 +125,15 @@ WebSocket transport:
 
 The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Port mode does not create `app.sock`.
 
-Admin and pairing are separate:
+Access is password based:
 
-- `/gateway/admin` always requires the management password configured in the fnOS wizard.
-- In path mode, admin login binds a server-side session to the fnOS gateway identity headers.
-- In port mode, admin login sets `fnos_dsh_admin`.
-- The admin page shows and refreshes the one-time six-digit pair code.
-- `/pair` only accepts a pair code; it never displays the code.
-- In path mode, successful pairing binds the device session to the fnOS gateway identity headers and also sets a root gateway cookie for the authenticated realtime port.
-- In port mode, successful pairing sets `fnos_dsh_gateway` for the browser/device.
-- Pair codes expire after five minutes, are single-use, and have per-IP failure limits.
+- `/fnos-access/login` requires the management password configured in the fnOS wizard.
+- Login sets one HttpOnly `fnos_dsh_access` cookie and returns directly to the official DSH Web UI.
+- The bundled DSH plugin gates HTML fallback, `/api`, `/plugins`, plugin HMR events, and WebSocket upgrades inside the DSH server.
+- The thin edge proxy only strips the fnOS path prefix and forwards HTTP/WebSocket traffic to `127.0.0.1:3080` with loopback `Host` and `Origin`.
+- The plugin injects a small `crypto.randomUUID` polyfill and path-prefix shim for LAN HTTP/path mode.
 
-The gateway then proxies UI, API, WebSocket, and EventSource traffic to `127.0.0.1:3080` with loopback `Host` and `Origin` headers, so the DSH configuration plane remains available without modifying DSH core packages.
+The runtime build applies deterministic gate patches to official DSH route packages and fails if any marker is missing. Runtime access control therefore lives at the DSH route boundary rather than in a large reverse-proxy reimplementation.
 
 Writable user data starts with fnOS data-share directories declared in `config/resource`:
 
@@ -144,7 +141,7 @@ Writable user data starts with fnOS data-share directories declared in `config/r
 - `deepseek-harness/profiles`
 - `deepseek-harness/exports`
 
-Additional writable directories can be added from the runtime configuration wizard. They are validated on startup and shown in the gateway admin page.
+Additional writable directories can be added from the runtime configuration wizard. They are validated on startup before DSH starts.
 
 Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
 

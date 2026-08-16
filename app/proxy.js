@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-require("./runtime/node_modules/@fnos/deepseek-harness-gateway/lib/gateway").startFromEnv();
+require("./runtime/node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs").startFromEnv();
