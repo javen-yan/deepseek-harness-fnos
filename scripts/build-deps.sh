@@ -46,6 +46,8 @@ for (const file of ["package.json", "package-lock.json"]) {
 NODE
 
 docker run --rm --platform "$DOCKER_PLATFORM" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
   -v "$WORK_DIR:/work" \
   -w /work \
   node:22.18-bookworm \
