@@ -1,0 +1,6 @@
+.DS_Store
+app/node_modules/
+dist/
+test_native_check/
+*.log
+*.tmp

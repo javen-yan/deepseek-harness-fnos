@@ -1,0 +1,74 @@
+name: Upstream Update PR
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dsh_version:
+        description: "Override @deepseek-ai/dsh version. Leave empty to use npm latest."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="$(node -p "require('./app/package.json').dependencies['@deepseek-ai/dsh']")"
+          if [ -n "${{ inputs.dsh_version }}" ]; then
+            LATEST="${{ inputs.dsh_version }}"
+          else
+            LATEST="$(npm view @deepseek-ai/dsh version)"
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump package metadata
+        if: steps.versions.outputs.changed == 'true'
+        run: node scripts/bump-dsh-version.js "${{ steps.versions.outputs.latest }}"
+
+      - name: Refresh package lock
+        if: steps.versions.outputs.changed == 'true'
+        working-directory: app
+        env:
+          npm_config_registry: https://registry.npmjs.org/
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Create update PR
+        if: steps.versions.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/update-dsh-${{ steps.versions.outputs.latest }}
+          commit-message: "chore: update dsh to ${{ steps.versions.outputs.latest }}"
+          title: "chore: update DeepSeek Harness to ${{ steps.versions.outputs.latest }}"
+          body: |
+            Automated update for `@deepseek-ai/dsh`.
+
+            - Previous: `${{ steps.versions.outputs.current }}`
+            - Latest: `${{ steps.versions.outputs.latest }}`
+            - fnOS app version: `${{ steps.versions.outputs.latest }}-1`
+          labels: |
+            dependencies
+            automated

@@ -1,0 +1,191 @@
+#!/bin/bash
+set -e
+
+export PATH="/var/apps/nodejs_v22/target/bin:$PATH"
+
+APP_DIR="$TRIM_APPDEST"
+DATA_DIR="$TRIM_PKGVAR"
+TMP_DIR="$TRIM_PKGTMP"
+HOME_DIR="$TRIM_PKGHOME"
+PORT="${TRIM_SERVICE_PORT:-3080}"
+HOST="${DSH_HOST:-127.0.0.1}"
+PIDFILE="$DATA_DIR/deepseek-harness.pid"
+PROXY_PIDFILE="$DATA_DIR/gateway-proxy.pid"
+LOG_DIR="$DATA_DIR/logs"
+LOGFILE="$LOG_DIR/deepseek-harness.log"
+PROXY_LOGFILE="$LOG_DIR/gateway-proxy.log"
+MARKET_LOGFILE="$LOG_DIR/dshmarket-install.log"
+MARKET_MARKER="$DATA_DIR/dshmarket-install.done"
+BIN_DIR="$TMP_DIR/bin"
+SOCKET_PATH="$APP_DIR/app.sock"
+GATEWAY_PREFIX="/app/deepseek_harness"
+
+write_error() {
+  local message="$1"
+  if [ -n "$TRIM_TEMP_LOGFILE" ]; then
+    echo "$message" > "$TRIM_TEMP_LOGFILE"
+  else
+    echo "$message" >&2
+  fi
+}
+
+is_dsh_running() {
+  [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" >/dev/null 2>&1
+}
+
+is_proxy_running() {
+  [ -f "$PROXY_PIDFILE" ] && kill -0 "$(cat "$PROXY_PIDFILE")" >/dev/null 2>&1
+}
+
+is_running() {
+  is_dsh_running && is_proxy_running && [ -S "$SOCKET_PATH" ]
+}
+
+require_dependencies() {
+  if [ ! -x "$APP_DIR/node_modules/.bin/dsh" ]; then
+    write_error "DeepSeek Harness dependencies are missing. Reinstall the app and check $DATA_DIR/logs/install.log."
+    exit 1
+  fi
+}
+
+install_dshmarket_once() {
+  if [ -f "$MARKET_MARKER" ]; then
+    return 0
+  fi
+
+  (
+    export HOME="$HOME_DIR"
+    export XDG_CONFIG_HOME="$DATA_DIR/config"
+    export XDG_DATA_HOME="$DATA_DIR/data"
+    export XDG_CACHE_HOME="$TMP_DIR/cache"
+    mkdir -p "$BIN_DIR"
+    cat > "$BIN_DIR/pnpm" <<'EOF'
+#!/bin/sh
+exec /var/apps/nodejs_v22/target/bin/corepack pnpm "$@"
+EOF
+    chmod +x "$BIN_DIR/pnpm"
+    export PATH="$BIN_DIR:$PATH"
+    cd "$APP_DIR" || exit 0
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing dshmarket..." >> "$MARKET_LOGFILE"
+    ./node_modules/.bin/dsh plugin --profile web add dshmarket >> "$MARKET_LOGFILE" 2>&1
+    status="$?"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - dshmarket installer exited with $status" >> "$MARKET_LOGFILE"
+    if [ "$status" = "0" ]; then
+      touch "$MARKET_MARKER"
+    fi
+  ) &
+  installer_pid="$!"
+
+  (
+    sleep 180
+    if kill -0 "$installer_pid" >/dev/null 2>&1; then
+      echo "$(date '+%Y-%m-%d %H:%M:%S') - dshmarket installer timed out" >> "$MARKET_LOGFILE"
+      kill "$installer_pid" >/dev/null 2>&1 || true
+    fi
+  ) &
+}
+
+start_app() {
+  mkdir -p "$DATA_DIR" "$TMP_DIR" "$HOME_DIR" "$LOG_DIR"
+
+  if is_running; then
+    exit 0
+  fi
+
+  require_dependencies
+
+  export HOME="$HOME_DIR"
+  export XDG_CONFIG_HOME="$DATA_DIR/config"
+  export XDG_DATA_HOME="$DATA_DIR/data"
+  export XDG_CACHE_HOME="$TMP_DIR/cache"
+
+  if ! is_dsh_running; then
+    set -- "$APP_DIR/node_modules/.bin/dsh" web --host "$HOST" --port "$PORT"
+    if [ -n "$DSH_TRUSTED_HOSTS" ]; then
+      for trusted_host in $DSH_TRUSTED_HOSTS; do
+        set -- "$@" --trusted-host "$trusted_host"
+      done
+    fi
+
+    nohup "$@" >> "$LOGFILE" 2>&1 &
+    echo "$!" > "$PIDFILE"
+    sleep 2
+  fi
+
+  if ! is_dsh_running; then
+    write_error "DeepSeek Harness failed to start. Check $LOGFILE for details."
+    exit 1
+  fi
+
+  if ! is_proxy_running || [ ! -S "$SOCKET_PATH" ]; then
+    rm -f "$SOCKET_PATH"
+    SOCKET_PATH="$SOCKET_PATH" \
+    GATEWAY_PREFIX="$GATEWAY_PREFIX" \
+    UPSTREAM_HOST="$HOST" \
+    UPSTREAM_PORT="$PORT" \
+    nohup node "$APP_DIR/proxy.js" >> "$PROXY_LOGFILE" 2>&1 &
+    echo "$!" > "$PROXY_PIDFILE"
+
+    for _ in 1 2 3 4 5; do
+      if is_proxy_running && [ -S "$SOCKET_PATH" ]; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  if ! is_running; then
+    write_error "DeepSeek Harness gateway proxy failed to start. Check $PROXY_LOGFILE for details."
+    stop_app
+    exit 1
+  fi
+
+  install_dshmarket_once
+}
+
+stop_pidfile() {
+  local pidfile="$1"
+  if [ ! -f "$pidfile" ]; then
+    return 0
+  fi
+
+  pid="$(cat "$pidfile")"
+  kill "$pid" >/dev/null 2>&1 || true
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      rm -f "$pidfile"
+      return 0
+    fi
+    sleep 1
+  done
+
+  kill -9 "$pid" >/dev/null 2>&1 || true
+  rm -f "$pidfile"
+}
+
+stop_app() {
+  stop_pidfile "$PROXY_PIDFILE"
+  rm -f "$SOCKET_PATH"
+  stop_pidfile "$PIDFILE"
+  exit 0
+}
+
+case "$1" in
+  start)
+    start_app
+    ;;
+  stop)
+    stop_app
+    ;;
+  status)
+    if is_running; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    write_error "Unknown command: $1"
+    exit 1
+    ;;
+esac

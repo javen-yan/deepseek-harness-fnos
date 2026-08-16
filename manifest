@@ -1,0 +1,22 @@
+appname=deepseek_harness
+version=0.1.0-rc.6-1
+display_name=DeepSeek Harness
+desc=DeepSeek Harness Web UI native package for fnOS.
+source=thirdparty
+platform=x86
+
+maintainer=DeepSeek AI
+maintainer_url=https://github.com/deepseek-ai/deepseek-harness
+distributor=fnOS community package
+distributor_url=https://github.com/deepseek-ai/deepseek-harness
+
+os_min_version=1.2.0
+
+desktop_uidir=ui
+desktop_applaunchname=deepseek_harness.main
+
+ctl_stop=true
+checkport=false
+install_dep_apps=nodejs_v22
+disable_authorization_path=true
+changelog=Initial native fnOS package for DeepSeek Harness.

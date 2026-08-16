@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+
+# Runtime data is left in TRIM_PKGVAR for fnOS/user retention policy.
+exit 0

@@ -1,0 +1,9 @@
+{
+  "name": "fnos-deepseek-harness-runtime",
+  "version": "0.1.0-rc.6-1",
+  "private": true,
+  "description": "Runtime dependencies for the fnOS DeepSeek Harness package.",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6"
+  }
+}
