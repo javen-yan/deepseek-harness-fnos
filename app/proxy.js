@@ -7,8 +7,8 @@ const SOCKET_PATH = process.env.SOCKET_PATH || "app.sock";
 const UPSTREAM_HOST = process.env.UPSTREAM_HOST || "127.0.0.1";
 const UPSTREAM_PORT = Number(process.env.UPSTREAM_PORT || "3080");
 
-const ABSOLUTE_PATHS = [
-  "/api",
+const API_PATH = "/api";
+const RESOURCE_PATHS = [
   "/assets",
   "/favicon.svg",
   "/manifest.webmanifest",
@@ -24,25 +24,75 @@ function stripPrefix(url) {
 function rewriteLocation(value) {
   if (!value) return value;
   if (value.startsWith(PREFIX)) return value;
-  if (ABSOLUTE_PATHS.some((path) => value === path || value.startsWith(`${path}/`))) {
+  if (RESOURCE_PATHS.some((path) => value === path || value.startsWith(`${path}/`))) {
     return `${PREFIX}${value}`;
   }
   return value;
 }
 
-function rewriteBody(contentType, body) {
-  if (!contentType || !/(text\/html|javascript|json|text\/css)/i.test(contentType)) {
-    return body;
-  }
-
-  let text = body.toString("utf8");
-  for (const path of ABSOLUTE_PATHS) {
+function rewriteAbsolutePaths(text, paths) {
+  for (const path of paths) {
     const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     text = text
       .replace(new RegExp(`(["'=])${escaped}(?=([/?#"]|'))`, "g"), `$1${PREFIX}${path}`)
       .replace(new RegExp(`url\\(${escaped.replace(/\//g, "\\/")}`, "g"), `url(${PREFIX}${path}`);
   }
-  return Buffer.from(text, "utf8");
+  return text;
+}
+
+function gatewayShim() {
+  const prefix = JSON.stringify(PREFIX);
+  const apiPath = JSON.stringify(API_PATH);
+  return `<script>(() => {
+  const prefix = ${prefix};
+  const apiPath = ${apiPath};
+  const sameOriginApi = (url) => {
+    const next = new URL(url, window.location.href);
+    if (next.origin === window.location.origin && (next.pathname === apiPath || next.pathname.startsWith(apiPath + "/"))) {
+      next.pathname = prefix + next.pathname;
+    }
+    return next;
+  };
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (input instanceof Request) {
+      const next = sameOriginApi(input.url);
+      return nativeFetch(new Request(next, input), init);
+    }
+    return nativeFetch(sameOriginApi(input), init);
+  };
+  const NativeWebSocket = window.WebSocket;
+  window.WebSocket = new Proxy(NativeWebSocket, {
+    construct(Target, args) {
+      if (args.length > 0) args[0] = sameOriginApi(args[0]).toString();
+      return Reflect.construct(Target, args);
+    }
+  });
+  window.WebSocket.prototype = NativeWebSocket.prototype;
+})()</script>`;
+}
+
+function rewriteBody(contentType, body) {
+  if (!contentType) return body;
+
+  let text = body.toString("utf8");
+  if (/text\/html/i.test(contentType)) {
+    text = rewriteAbsolutePaths(text, RESOURCE_PATHS);
+    text = text.replace(/<link\s+rel=["']manifest["'][^>]*>\s*/i, "");
+    if (!text.includes("window.__DSH_GATEWAY_SHIM__")) {
+      text = text.replace(
+        /<head>/i,
+        `<head><script>window.__DSH_GATEWAY_SHIM__=true</script>${gatewayShim()}`,
+      );
+    }
+    return Buffer.from(text, "utf8");
+  }
+
+  if (/(json|text\/css)/i.test(contentType)) {
+    return Buffer.from(rewriteAbsolutePaths(text, RESOURCE_PATHS), "utf8");
+  }
+
+  return body;
 }
 
 const server = http.createServer((req, res) => {
