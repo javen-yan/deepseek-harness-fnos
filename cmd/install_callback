@@ -9,7 +9,7 @@ TMP_DIR="$TRIM_PKGTMP"
 HOME_DIR="$TRIM_PKGHOME"
 LOG_DIR="$DATA_DIR/logs"
 LOGFILE="$LOG_DIR/install.log"
-SOURCES_FILE="$APP_DIR/dependency-sources.conf"
+RUNTIME_DIR="$APP_DIR/runtime"
 
 write_error() {
   local message="$1"
@@ -24,6 +24,12 @@ log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >> "$LOGFILE"
 }
 
+fail() {
+  log "ERROR: $*"
+  write_error "$*"
+  exit 1
+}
+
 detect_arch() {
   local raw_arch="${TRIM_SYS_ARCH:-$(uname -m)}"
   case "$raw_arch" in
@@ -34,8 +40,7 @@ detect_arch() {
       echo "arm64"
       ;;
     *)
-      write_error "Unsupported system architecture: $raw_arch"
-      exit 1
+      fail "Unsupported system architecture: $raw_arch"
       ;;
   esac
 }
@@ -47,43 +52,20 @@ sha256_file() {
   elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$file" | awk '{print $1}'
   else
-    write_error "No SHA256 tool found. Please install sha256sum or shasum."
-    exit 1
+    fail "No SHA256 tool found. Please install sha256sum or shasum."
   fi
 }
 
-load_sources() {
-  if [ -n "${DSH_DEPENDENCY_BASE_URLS:-}" ]; then
-    printf '%s\n' $DSH_DEPENDENCY_BASE_URLS
-    return 0
-  fi
+verify_runtime() {
+  [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ] || fail "Runtime is missing executable node_modules/.bin/dsh."
+  [ -f "$RUNTIME_DIR/node_modules/node-pty/build/Release/pty.node" ] || fail "Runtime is missing node-pty native module."
+  [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html" ] || fail "Runtime is missing DSH web frontend."
+  [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" ] || fail "Runtime is missing DSH app boot."
+  [ -f "$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs" ] || fail "Runtime is missing packaged pnpm."
 
-  if [ -f "$SOURCES_FILE" ]; then
-    sed 's/[[:space:]]*$//' "$SOURCES_FILE" | awk 'NF && $1 !~ /^#/'
+  if ! node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
+    fail "Runtime node-pty module failed to load. Check $LOGFILE."
   fi
-}
-
-score_source() {
-  local base_url="$1"
-  local archive="$2"
-  local test_file="$TMP_DIR/speed-test-$$.part"
-  local started finished elapsed bytes score
-  started="$(date +%s)"
-  if curl -fsSL --connect-timeout 3 --max-time 8 -r 0-1048575 -o "$test_file" "${base_url%/}/$archive" >> "$LOGFILE" 2>&1; then
-    finished="$(date +%s)"
-    elapsed=$((finished - started))
-    [ "$elapsed" -lt 1 ] && elapsed=1
-    bytes="$(wc -c < "$test_file" | tr -d ' ')"
-    score=$((bytes / elapsed))
-    rm -f "$test_file"
-    log "Speed test passed: ${base_url%/}/$archive (${bytes} bytes, ${elapsed}s, score ${score})"
-    printf '%s %s\n' "$score" "$base_url"
-    return 0
-  fi
-
-  rm -f "$test_file"
-  log "Speed test failed: ${base_url%/}/$archive"
-  return 1
 }
 
 if ! command -v node >/dev/null 2>&1; then
@@ -91,105 +73,51 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-  write_error "curl is unavailable. It is required to download DeepSeek Harness dependencies."
-  exit 1
-fi
-
 if ! command -v tar >/dev/null 2>&1; then
-  write_error "tar is unavailable. It is required to extract DeepSeek Harness dependencies."
+  write_error "tar is unavailable. It is required to extract DeepSeek Harness runtime."
   exit 1
 fi
 
 mkdir -p "$LOG_DIR" "$TMP_DIR" "$HOME_DIR"
-
 cd "$APP_DIR"
 
-if [ -x ./node_modules/.bin/dsh ]; then
-  log "Dependencies already exist; skipping download."
+if [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ]; then
+  log "Runtime already exists; verifying bundled runtime tree."
+  verify_runtime
+  log "Existing runtime verified."
   exit 0
 fi
 
-dep_arch="$(detect_arch)"
-archive="node_modules-linux-${dep_arch}.tgz"
+runtime_arch="$(detect_arch)"
+archive="runtime-linux-${runtime_arch}.tgz"
 sha_file="${archive}.sha256"
-archive_path="$TMP_DIR/$archive"
-sha_path="$TMP_DIR/$sha_file"
+archive_path="$APP_DIR/$archive"
+sha_path="$APP_DIR/$sha_file"
 
-log "Installing DeepSeek Harness dependencies for linux-${dep_arch}."
+log "Using bundled runtime archive: $archive"
 
-sources="$(load_sources || true)"
-if [ -z "$sources" ]; then
-  write_error "No DeepSeek Harness dependency source configured. Add URLs to $SOURCES_FILE or set DSH_DEPENDENCY_BASE_URLS."
-  log "No dependency sources configured."
-  exit 1
+[ -f "$archive_path" ] || fail "Bundled runtime archive $archive is missing. Rebuild the full FPK."
+[ -f "$sha_path" ] || fail "Bundled runtime checksum $sha_file is missing. Rebuild the full FPK."
+
+expected_sha="$(awk '{print $1; exit}' "$sha_path" | tr 'A-F' 'a-f')"
+actual_sha="$(sha256_file "$archive_path" | tr 'A-F' 'a-f')"
+if [ -z "$expected_sha" ] || [ "$expected_sha" != "$actual_sha" ]; then
+  fail "Runtime archive SHA256 mismatch: expected $expected_sha, got $actual_sha."
+fi
+log "SHA256 verified: $actual_sha"
+
+rm -rf "$RUNTIME_DIR"
+mkdir -p "$RUNTIME_DIR"
+if ! tar -xzf "$archive_path" -C "$RUNTIME_DIR" >> "$LOGFILE" 2>&1; then
+  rm -rf "$RUNTIME_DIR"
+  fail "Failed to extract bundled runtime archive. Check $LOGFILE."
 fi
 
-ranked_sources="$(
-  for source_url in $sources; do
-    score_source "$source_url" "$archive" || true
-  done | sort -nr
-)"
+verify_runtime
 
-if [ -z "$ranked_sources" ]; then
-  write_error "All DeepSeek Harness dependency mirrors failed speed test. Check $LOGFILE."
-  exit 1
+if [ -n "${TRIM_USERNAME:-}" ]; then
+  chown -R "$TRIM_USERNAME:${TRIM_GROUPNAME:-$TRIM_USERNAME}" "$RUNTIME_DIR" >/dev/null 2>&1 || true
 fi
 
-for ranked in $ranked_sources; do
-  case "$ranked" in
-    http://*|https://*)
-      base_url="$ranked"
-      ;;
-    *)
-      continue
-      ;;
-  esac
-
-  log "Trying dependency source: ${base_url%/}"
-  rm -f "$archive_path" "$sha_path"
-
-  if ! curl -fsSL --connect-timeout 10 --max-time 60 -o "$sha_path" "${base_url%/}/$sha_file" >> "$LOGFILE" 2>&1; then
-    log "Failed to download checksum from ${base_url%/}/$sha_file"
-    continue
-  fi
-
-  if ! curl -fSL --connect-timeout 10 --max-time 900 -o "$archive_path" "${base_url%/}/$archive" >> "$LOGFILE" 2>&1; then
-    log "Failed to download dependency archive from ${base_url%/}/$archive"
-    continue
-  fi
-
-  expected_sha="$(awk '{print $1; exit}' "$sha_path" | tr 'A-F' 'a-f')"
-  actual_sha="$(sha256_file "$archive_path" | tr 'A-F' 'a-f')"
-  if [ "$expected_sha" != "$actual_sha" ]; then
-    log "SHA256 mismatch from ${base_url%/}: expected $expected_sha, got $actual_sha"
-    continue
-  fi
-
-  log "SHA256 verified: $actual_sha"
-  rm -rf ./node_modules
-  if ! tar -xzf "$archive_path" >> "$LOGFILE" 2>&1; then
-    log "Failed to extract $archive"
-    rm -rf ./node_modules
-    continue
-  fi
-
-  if [ -n "${TRIM_USERNAME:-}" ]; then
-    chown -R "$TRIM_USERNAME:${TRIM_GROUPNAME:-$TRIM_USERNAME}" ./node_modules >/dev/null 2>&1 || true
-  fi
-
-  if [ -x ./node_modules/.bin/dsh ]; then
-    log "Dependency installation completed."
-    exit 0
-  fi
-
-  log "Extracted archive did not contain executable node_modules/.bin/dsh"
-  rm -rf ./node_modules
-done
-
-if [ ! -x ./node_modules/.bin/dsh ]; then
-  write_error "DeepSeek Harness dependency download failed. Check $LOGFILE."
-  exit 1
-fi
-
+log "Runtime installation completed."
 exit 0

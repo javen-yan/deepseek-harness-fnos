@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-1
+version=0.1.0-rc.6-2
 display_name=DeepSeek Harness
 desc=DeepSeek Harness Web UI native package for fnOS.
 source=thirdparty
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=Initial native fnOS package for DeepSeek Harness.
+changelog=Package a full physical DeepSeek Harness runtime tree.

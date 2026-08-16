@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  dependencies:
+  runtime:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,19 +31,21 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build Linux dependency archives
-        run: TARGET_ARCH=all ./scripts/build-deps.sh
+      - name: Build Linux runtime archives
+        run: TARGET_ARCH=all ./scripts/build-runtime.sh
 
-      - name: Upload dependency artifacts
+      - name: Upload runtime artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies
+          name: runtime
           path: |
-            dist/dependencies/node_modules-linux-*.tgz
-            dist/dependencies/node_modules-linux-*.tgz.sha256
+            dist/runtime/runtime-linux-*.tgz
+            dist/runtime/runtime-linux-*.tgz.sha256
 
   fpk:
     runs-on: macos-14
+    needs:
+      - runtime
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +54,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Download runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime
+          path: dist/runtime
 
       - name: Resolve release tag
         id: release
@@ -83,19 +91,9 @@ jobs:
           echo "FNPACK_BIN=$RUNNER_TEMP/fnpack/fnpack" >> "$GITHUB_ENV"
 
       - name: Build x86 FPK
-        env:
-          DEPENDENCY_BASE_URLS: |
-            https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
-            https://gh.llkk.cc/https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
-            https://gh-proxy.com/https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
         run: TARGET_PLATFORM=x86 ./scripts/build-fpk.sh
 
       - name: Build arm FPK
-        env:
-          DEPENDENCY_BASE_URLS: |
-            https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
-            https://gh.llkk.cc/https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
-            https://gh-proxy.com/https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}
         run: TARGET_PLATFORM=arm ./scripts/build-fpk.sh
 
       - name: Upload FPK artifacts
@@ -107,7 +105,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs:
-      - dependencies
+      - runtime
       - fpk
     steps:
       - name: Checkout

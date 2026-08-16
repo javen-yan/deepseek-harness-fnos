@@ -12,7 +12,12 @@ if (!dshVersion || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(dshVersion)) {
   process.exit(1);
 }
 
-const appVersion = `${dshVersion}-1`;
+const appRevision = process.argv[3] || "1";
+if (!/^[1-9]\d*$/.test(appRevision)) {
+  console.error("App revision must be a positive integer.");
+  process.exit(1);
+}
+const appVersion = `${dshVersion}-${appRevision}`;
 const packageJsonPath = path.join(rootDir, "app", "package.json");
 const packageLockPath = path.join(rootDir, "app", "package-lock.json");
 const manifestPath = path.join(rootDir, "manifest");

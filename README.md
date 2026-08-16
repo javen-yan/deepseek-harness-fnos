@@ -1,75 +1,113 @@
-# DeepSeek Harness fnOS Native FPK
+# DeepSeek Harness fnOS Full FPK
 
-This package wraps DeepSeek Harness for fnOS without Docker at runtime. The FPK is intentionally small: it contains the fnOS app frame, lifecycle scripts, package metadata, gateway proxy, and icons, then downloads a prebuilt Linux dependency archive during installation.
+This repository packages DeepSeek Harness as a native fnOS app without Docker, `npx`, or install-time dependency downloads.
 
-DeepSeek Harness still listens on `127.0.0.1:3080`. External access should go through the fnOS gateway entry at `/app/deepseek_harness/`, which proxies to the local service through `app.sock`.
+The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
-## Dependency Archives
+Ordinary users should download only the matching Full FPK from GitHub Releases:
 
-Build dependency archives on a development machine with Docker:
+- `deepseek_harness-<version>-x86.fpk` for x86 fnOS
+- `deepseek_harness-<version>-arm.fpk` for ARM fnOS
+
+Runtime archives are uploaded as debug assets, but users do not need them.
+
+## Runtime Model
+
+The packaged runtime follows the same boundary used by `deepseek-harness-desktop`: runtime code, `node_modules`, CLI entrypoints, `pnpm`, and native modules remain a real physical file tree.
+
+Installed layout:
+
+```text
+TRIM_APPDEST/
+  runtime/
+    package.json
+    package-lock.json
+    node_modules/
+      .bin/dsh
+      node-pty/build/Release/pty.node
+      @deepseek-ai/dsh-web-frontend/dist/index.html
+      @deepseek-ai/dsh-app-boot/lib/index.js
+      pnpm/bin/pnpm.mjs
+  proxy.js
+  app.sock
+```
+
+The NAS never runs `npm install`, `npm ci`, or `npx`, so native modules are not compiled on the user device.
+
+## Build Runtime
+
+Build Linux runtime archives with Docker:
 
 ```sh
-cd /Users/javen/Documents/Workspace/private/helper/fnos-app-build
-TARGET_ARCH=x64 ./scripts/build-deps.sh
-TARGET_ARCH=arm64 ./scripts/build-deps.sh
+TARGET_ARCH=x64 ./scripts/build-runtime.sh
+TARGET_ARCH=arm64 ./scripts/build-runtime.sh
+```
+
+Or build both:
+
+```sh
+TARGET_ARCH=all ./scripts/build-runtime.sh
 ```
 
 Outputs:
 
 ```text
-dist/dependencies/node_modules-linux-x64.tgz
-dist/dependencies/node_modules-linux-x64.tgz.sha256
-dist/dependencies/node_modules-linux-arm64.tgz
-dist/dependencies/node_modules-linux-arm64.tgz.sha256
+dist/runtime/runtime-linux-x64.tgz
+dist/runtime/runtime-linux-x64.tgz.sha256
+dist/runtime/runtime-linux-arm64.tgz
+dist/runtime/runtime-linux-arm64.tgz.sha256
 ```
 
-Upload these four files to one or more HTTP(S) mirrors. Add one base URL per line to `app/dependency-sources.conf` before building the FPK, or set `DSH_DEPENDENCY_BASE_URLS` during install. The installer appends the archive and checksum names automatically, speed-tests every source with a 1 MB range request, downloads from the fastest successful source, verifies SHA256, then extracts to `TRIM_APPDEST/node_modules`.
+The build fails if the runtime is missing DSH CLI, web frontend, app boot, packaged `pnpm`, or `node-pty`.
 
 ## Build FPK
 
+Build the full FPK after the matching runtime archive exists:
+
 ```sh
-./scripts/build-fpk.sh
+TARGET_PLATFORM=x86 ./scripts/build-fpk.sh
 TARGET_PLATFORM=arm ./scripts/build-fpk.sh
 ```
 
 `build-fpk.sh` requires the official `fnpack` tool. Install it in `PATH`, put it at `tools/fnpack`, or set `FNPACK_BIN=/absolute/path/to/fnpack`.
 
-The generated FPK does not include scattered `node_modules` or dependency archives. That avoids appcenter getting stuck while unpacking thousands of small files and avoids native compilation on the NAS.
+The generated FPK contains `runtime-linux-<arch>.tgz` and its `.sha256`, but no scattered `node_modules`.
 
 ## GitHub Release Loop
 
-This repository can publish itself from GitHub:
+This repository publishes itself from GitHub:
 
-1. Push the source to `https://github.com/javen-yan/deepseek-harness-fnos`.
-2. Merging to `main` runs `Tag Release`, which creates `v<manifest version>` if it does not already exist.
-3. Pushing that tag runs `Release FPK`.
-4. The release workflow builds Linux x64/arm64 dependency archives, builds x86/arm FPK files, and uploads all assets to the GitHub Release.
-5. Each FPK embeds this release URL in `dependency-sources.conf`, so fnOS installs can download the matching dependency archive without manual URL configuration.
+1. Merging to `main` runs `Tag Release`, which creates `v<manifest version>` if it does not exist.
+2. The tag runs `Release FPK`.
+3. Ubuntu builds x64/arm64 runtime archives and checks their physical runtime gates.
+4. macOS downloads the runtime archives, runs official `fnpack`, and builds x86/arm Full FPK files.
+5. The release uploads two recommended FPK files plus runtime debug assets.
 
-Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` daily and can also be triggered manually. When a newer upstream version exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest` using the version rule `<dsh-version>-1`.
+Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` daily and can also be triggered manually. When a newer upstream version exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest`.
+
+## Runtime Behavior
+
+- fnOS dependency: `nodejs_v22`
+- Harness bind: `127.0.0.1:3080`
+- fnOS gateway URL: `/app/deepseek_harness/`
+- Gateway socket: `TRIM_APPDEST/app.sock`
+- Install log: `TRIM_PKGVAR/logs/install.log`
+- Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
+- Gateway log: `TRIM_PKGVAR/logs/gateway-proxy.log`
+- dshmarket log: `TRIM_PKGVAR/logs/dshmarket-install.log`
+
+`192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the fnOS gateway. Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
+
+After the main service starts, the app runs this in the background:
+
+```sh
+dsh plugin --profile web add dshmarket
+```
+
+It uses the packaged runtime `pnpm`, logs clearly, and never blocks the main app from running.
 
 Regenerate the black PNG icons from the DeepSeek Harness favicon with:
 
 ```sh
 NODE_PATH=/path/to/sharp/node_modules node scripts/generate-icons.js
 ```
-
-## Runtime
-
-- fnOS dependency: `nodejs_v22`
-- Harness bind: `127.0.0.1:3080`
-- fnOS gateway URL: `/app/deepseek_harness/`
-- Gateway socket: `TRIM_APPDEST/app.sock`
-- Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
-- Gateway log: `TRIM_PKGVAR/logs/gateway-proxy.log`
-- Install log: `TRIM_PKGVAR/logs/install.log`
-
-`192.168.1.32:3080` will not open because the service is deliberately bound to loopback. Do not change it to `0.0.0.0`; DeepSeek Harness rejects that mode because it can expose remote-code-execution capabilities.
-
-After the main dependency installation succeeds, startup launches this background command:
-
-```sh
-dsh plugin --profile web add dshmarket
-```
-
-It uses a `corepack pnpm` wrapper, logs to `TRIM_PKGVAR/logs/dshmarket-install.log`, and never blocks the main app from running.

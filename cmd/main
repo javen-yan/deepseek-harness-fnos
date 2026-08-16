@@ -7,6 +7,7 @@ APP_DIR="$TRIM_APPDEST"
 DATA_DIR="$TRIM_PKGVAR"
 TMP_DIR="$TRIM_PKGTMP"
 HOME_DIR="$TRIM_PKGHOME"
+RUNTIME_DIR="$APP_DIR/runtime"
 PORT="${TRIM_SERVICE_PORT:-3080}"
 HOST="${DSH_HOST:-127.0.0.1}"
 PIDFILE="$DATA_DIR/deepseek-harness.pid"
@@ -19,6 +20,8 @@ MARKET_MARKER="$DATA_DIR/dshmarket-install.done"
 BIN_DIR="$TMP_DIR/bin"
 SOCKET_PATH="$APP_DIR/app.sock"
 GATEWAY_PREFIX="/app/deepseek_harness"
+DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
+PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
 
 write_error() {
   local message="$1"
@@ -42,8 +45,16 @@ is_running() {
 }
 
 require_dependencies() {
-  if [ ! -x "$APP_DIR/node_modules/.bin/dsh" ]; then
-    write_error "DeepSeek Harness dependencies are missing. Reinstall the app and check $DATA_DIR/logs/install.log."
+  if [ ! -x "$DSH_BIN" ]; then
+    write_error "DeepSeek Harness runtime is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
+    exit 1
+  fi
+  if [ ! -f "$RUNTIME_DIR/node_modules/node-pty/build/Release/pty.node" ]; then
+    write_error "DeepSeek Harness runtime is missing node-pty. Reinstall the app and check $DATA_DIR/logs/install.log."
+    exit 1
+  fi
+  if [ ! -f "$PNPM_BIN" ]; then
+    write_error "DeepSeek Harness runtime is missing pnpm. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
 }
@@ -55,19 +66,20 @@ install_dshmarket_once() {
 
   (
     export HOME="$HOME_DIR"
+    export DSH_HOME="$HOME_DIR"
     export XDG_CONFIG_HOME="$DATA_DIR/config"
     export XDG_DATA_HOME="$DATA_DIR/data"
     export XDG_CACHE_HOME="$TMP_DIR/cache"
     mkdir -p "$BIN_DIR"
-    cat > "$BIN_DIR/pnpm" <<'EOF'
+    cat > "$BIN_DIR/pnpm" <<EOF
 #!/bin/sh
-exec /var/apps/nodejs_v22/target/bin/corepack pnpm "$@"
+exec /var/apps/nodejs_v22/target/bin/node "$PNPM_BIN" "\$@"
 EOF
     chmod +x "$BIN_DIR/pnpm"
     export PATH="$BIN_DIR:$PATH"
-    cd "$APP_DIR" || exit 0
+    cd "$RUNTIME_DIR" || exit 0
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing dshmarket..." >> "$MARKET_LOGFILE"
-    ./node_modules/.bin/dsh plugin --profile web add dshmarket >> "$MARKET_LOGFILE" 2>&1
+    "$DSH_BIN" plugin --profile web add dshmarket >> "$MARKET_LOGFILE" 2>&1
     status="$?"
     echo "$(date '+%Y-%m-%d %H:%M:%S') - dshmarket installer exited with $status" >> "$MARKET_LOGFILE"
     if [ "$status" = "0" ]; then
@@ -95,12 +107,13 @@ start_app() {
   require_dependencies
 
   export HOME="$HOME_DIR"
+  export DSH_HOME="$HOME_DIR"
   export XDG_CONFIG_HOME="$DATA_DIR/config"
   export XDG_DATA_HOME="$DATA_DIR/data"
   export XDG_CACHE_HOME="$TMP_DIR/cache"
 
   if ! is_dsh_running; then
-    set -- "$APP_DIR/node_modules/.bin/dsh" web --host "$HOST" --port "$PORT"
+    set -- "$DSH_BIN" web --host "$HOST" --port "$PORT"
     if [ -n "$DSH_TRUSTED_HOSTS" ]; then
       for trusted_host in $DSH_TRUSTED_HOSTS; do
         set -- "$@" --trusted-host "$trusted_host"
