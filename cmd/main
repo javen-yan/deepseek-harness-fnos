@@ -88,7 +88,7 @@ NODE
   case "$GATEWAY_MODE" in
     path)
       GATEWAY_ENABLE_PATH=1
-      GATEWAY_ENABLE_PORT=0
+      GATEWAY_ENABLE_PORT="${GATEWAY_ENABLE_PORT:-1}"
       ;;
     port)
       GATEWAY_ENABLE_PATH=0

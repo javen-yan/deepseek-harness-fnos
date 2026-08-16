@@ -100,7 +100,7 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 - fnOS dependency: `nodejs_v22`
 - Harness bind: `127.0.0.1:3080`
 - fnOS path entry: `/app/deepseek_harness/` when the App Center entry uses `gatewayPrefix` and `gatewaySocket`
-- Gateway port entry: `http://<NAS_IP>:3081/` when the App Center entry uses `port`
+- Gateway port entry: `http://<NAS_IP>:3081/`
 - Gateway socket: `TRIM_APPDEST/app.sock` in path entry mode
 - Install log: `TRIM_PKGVAR/logs/install.log`
 - Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
@@ -115,12 +115,12 @@ Gateway source is intentionally not maintained in this repository. It lives in [
 
 `build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
 
-The gateway provides one active authenticated access mode at a time. The source of truth is the App Center entry configuration in `app/ui/config`:
+The fnOS App Center entry still opens the path mode UI by default. Because the fnOS unified gateway does not reliably proxy WebSocket Upgrade requests to app sockets, path mode also starts the authenticated port gateway and rewrites Harness realtime WebSocket URLs to `http://<NAS_IP>:3081/`:
 
-- Path mode: `http://<NAS_IP>:5666/app/deepseek_harness/`
-- Port mode: `http://<NAS_IP>:3081/`
+- Path UI: `http://<NAS_IP>:5666/app/deepseek_harness/`
+- Realtime/port fallback: `http://<NAS_IP>:3081/`
 
-The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Path mode does not listen on 3081. Port mode does not create `app.sock`.
+The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Port mode does not create `app.sock`.
 
 Admin and pairing are separate:
 
@@ -129,7 +129,7 @@ Admin and pairing are separate:
 - In port mode, admin login sets `fnos_dsh_admin`.
 - The admin page shows and refreshes the one-time six-digit pair code.
 - `/pair` only accepts a pair code; it never displays the code.
-- In path mode, successful pairing binds the device session to the fnOS gateway identity headers.
+- In path mode, successful pairing binds the device session to the fnOS gateway identity headers and also sets a root gateway cookie for the authenticated realtime port.
 - In port mode, successful pairing sets `fnos_dsh_gateway` for the browser/device.
 - Pair codes expire after five minutes, are single-use, and have per-IP failure limits.
 
