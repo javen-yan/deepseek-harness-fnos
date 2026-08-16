@@ -2,5 +2,6 @@
 app/node_modules/
 dist/
 test_native_check/
+.playwright-cli/
 *.log
 *.tmp

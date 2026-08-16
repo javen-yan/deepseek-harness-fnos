@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-10
+version=0.1.0-rc.6-11
 display_name=DeepSeek Harness
 desc=DeepSeek Harness Web UI native package for fnOS.
 source=thirdparty
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=Route realtime WebSocket traffic through authenticated port gateway for fnOS path entry.
+changelog=Stream realtime Harness events through the fnOS path gateway so message rendering works without exposing the port entry.
