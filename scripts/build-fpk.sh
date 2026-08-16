@@ -45,6 +45,13 @@ if [ -z "$FNPACK_BIN" ]; then
     exit 1
   fi
 fi
+case "$FNPACK_BIN" in
+  /*)
+    ;;
+  *)
+    FNPACK_BIN="$ROOT_DIR/$FNPACK_BIN"
+    ;;
+esac
 
 node - "$ROOT_DIR" "$STAGING_DIR" "$OUT_FILE" "$TARGET_PLATFORM" "$RUNTIME_DIR" "$RUNTIME_ARCHIVE" "$RUNTIME_SHA" <<'NODE'
 const fs = require("fs");
@@ -56,6 +63,7 @@ fs.mkdirSync(stagingDir, { recursive: true });
 fs.rmSync(outFile, { force: true });
 
 for (const entry of ["app", "cmd", "config", "wizard"]) {
+  if (!fs.existsSync(path.join(rootDir, entry))) continue;
   fs.cpSync(path.join(rootDir, entry), path.join(stagingDir, entry), {
     recursive: true,
     filter: (src) => {

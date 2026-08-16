@@ -2,6 +2,10 @@
 
 This repository packages DeepSeek Harness as a native fnOS app without Docker, `npx`, or install-time dependency downloads.
 
+Project page: [https://javen-yan.github.io/deepseek-harness-fnos/](https://javen-yan.github.io/deepseek-harness-fnos/)
+
+Local page source: [`site/index.html`](site/index.html)
+
 The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
 Ordinary users should download only the matching Full FPK from GitHub Releases:
@@ -24,6 +28,12 @@ TRIM_APPDEST/
     package-lock.json
     node_modules/
       .bin/dsh
+      @fnos/deepseek-harness-gateway/
+        package.json
+        lib/gateway.js
+        static/admin-login.html
+        static/admin.html
+        static/login.html
       node-pty/build/Release/pty.node
       @deepseek-ai/dsh-web-frontend/dist/index.html
       @deepseek-ai/dsh-app-boot/lib/index.js
@@ -89,14 +99,51 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 
 - fnOS dependency: `nodejs_v22`
 - Harness bind: `127.0.0.1:3080`
-- fnOS gateway URL: `/app/deepseek_harness/`
-- Gateway socket: `TRIM_APPDEST/app.sock`
+- fnOS path entry: `/app/deepseek_harness/` when the App Center entry uses `gatewayPrefix` and `gatewaySocket`
+- Gateway port entry: `http://<NAS_IP>:3081/` when the App Center entry uses `port`
+- Gateway socket: `TRIM_APPDEST/app.sock` in path entry mode
 - Install log: `TRIM_PKGVAR/logs/install.log`
 - Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
 - Gateway log: `TRIM_PKGVAR/logs/gateway-proxy.log`
+- Gateway access log: `TRIM_PKGVAR/logs/gateway-access.log`
+- Gateway install log: `TRIM_PKGVAR/logs/gateway-install.log`
 - dshmarket log: `TRIM_PKGVAR/logs/dshmarket-install.log`
 
-`192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the fnOS gateway. Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
+`192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the bundled fnOS gateway package.
+
+Gateway source is intentionally not maintained in this repository. It lives in [`javen-yan/dsh-remote-gateway`](https://github.com/javen-yan/dsh-remote-gateway) and is consumed as the npm package `@fnos/deepseek-harness-gateway`.
+
+`build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
+
+The gateway provides one active authenticated access mode at a time. The source of truth is the App Center entry configuration in `app/ui/config`:
+
+- Path mode: `http://<NAS_IP>:5666/app/deepseek_harness/`
+- Port mode: `http://<NAS_IP>:3081/`
+
+The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Path mode does not listen on 3081. Port mode does not create `app.sock`.
+
+Admin and pairing are separate:
+
+- `/gateway/admin` always requires the management password configured in the fnOS wizard.
+- In path mode, admin login binds a server-side session to the fnOS gateway identity headers.
+- In port mode, admin login sets `fnos_dsh_admin`.
+- The admin page shows and refreshes the one-time six-digit pair code.
+- `/pair` only accepts a pair code; it never displays the code.
+- In path mode, successful pairing binds the device session to the fnOS gateway identity headers.
+- In port mode, successful pairing sets `fnos_dsh_gateway` for the browser/device.
+- Pair codes expire after five minutes, are single-use, and have per-IP failure limits.
+
+The gateway then proxies UI, API, WebSocket, and EventSource traffic to `127.0.0.1:3080` with loopback `Host` and `Origin` headers, so the DSH configuration plane remains available without modifying DSH core packages.
+
+Writable user data starts with fnOS data-share directories declared in `config/resource`:
+
+- `deepseek-harness/workspaces`
+- `deepseek-harness/profiles`
+- `deepseek-harness/exports`
+
+Additional writable directories can be added from the runtime configuration wizard. They are validated on startup and shown in the gateway admin page.
+
+Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
 
 After the main service starts, the app runs this in the background:
 

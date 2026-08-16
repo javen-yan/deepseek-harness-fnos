@@ -66,6 +66,10 @@ verify_runtime() {
   if ! node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
     fail "Runtime node-pty module failed to load. Check $LOGFILE."
   fi
+
+  if grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" 2>/dev/null; then
+    return 2
+  fi
 }
 
 if ! command -v node >/dev/null 2>&1; then
@@ -83,9 +87,19 @@ cd "$APP_DIR"
 
 if [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ]; then
   log "Runtime already exists; verifying bundled runtime tree."
-  verify_runtime
-  log "Existing runtime verified."
-  exit 0
+  if verify_runtime; then
+    log "Existing runtime verified."
+    "$(dirname "$0")/write_gateway_config"
+    exit 0
+  fi
+  status="$?"
+  if [ "$status" != "2" ]; then
+    exit "$status"
+  fi
+  log "Existing runtime contains an old fnOS core patch; reinstalling bundled runtime tree."
+  rm -rf "$RUNTIME_DIR"
+else
+  log "Runtime does not exist; installing bundled runtime tree."
 fi
 
 runtime_arch="$(detect_arch)"
@@ -118,6 +132,8 @@ verify_runtime
 if [ -n "${TRIM_USERNAME:-}" ]; then
   chown -R "$TRIM_USERNAME:${TRIM_GROUPNAME:-$TRIM_USERNAME}" "$RUNTIME_DIR" >/dev/null 2>&1 || true
 fi
+
+"$(dirname "$0")/write_gateway_config"
 
 log "Runtime installation completed."
 exit 0

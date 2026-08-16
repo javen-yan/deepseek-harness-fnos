@@ -1,4 +1,8 @@
 #!/bin/bash
 set -e
 
+"$(dirname "$0")/write_gateway_config"
+"$(dirname "$0")/main" stop || true
+"$(dirname "$0")/main" start
+
 exit 0

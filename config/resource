@@ -1,1 +1,15 @@
-{}
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "deepseek-harness/workspaces"
+      },
+      {
+        "name": "deepseek-harness/profiles"
+      },
+      {
+        "name": "deepseek-harness/exports"
+      }
+    ]
+  }
+}

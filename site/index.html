@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeepSeek Harness × fnOS：你的 NAS，从此有了自己的 Agent</title>
+  <meta name="description" content="把 DeepSeek Harness 装进飞牛OS：上传即装、持续在线、安全可控。让一个随叫随到的 AI 助手常驻你的 NAS。">
+  <link rel="icon" href="favicon.svg">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0a;
+      --surface-1: hsla(0, 0%, 100%, .06);
+      --surface-2: hsla(0, 0%, 100%, .04);
+      --surface-3: hsla(0, 0%, 100%, .02);
+      --border: hsla(0, 0%, 100%, .06);
+      --border-strong: hsla(0, 0%, 100%, .16);
+      --brand: #4d6bfe;
+      --brand-2: #6799fe;
+      --text: #ffffff;
+      --desc: #9aa3b2;
+      --dim: #6b7380;
+      --r-media: 10px;
+      --r-card: 16px;
+      --r-pill: 100px;
+      --font-sans: "DM Sans", "Host Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-display: "Montserrat", "Host Grotesk", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "Fragment Mono", "Edit Undo", ui-monospace, "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(1100px 560px at 60% -12%, rgba(77, 107, 254, .13), transparent 62%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    a { color: inherit; text-decoration: none; }
+    ::selection { background: rgba(77, 107, 254, .42); }
+
+    .wrap { width: min(100% - 48px, 1140px); margin: 0 auto; }
+
+    /* ---------- 导航 ---------- */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10, 10, 10, .75);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .nav-inner, .brand, .links, .actions { display: flex; align-items: center; }
+    .nav-inner { justify-content: space-between; min-height: 64px; gap: 24px; }
+    .brand { gap: 11px; font: 500 15px/1.2 var(--font-sans); white-space: nowrap; }
+    .brand img { width: 28px; height: 28px; border-radius: 7px; filter: invert(1); }
+    .links { justify-content: flex-end; gap: 24px; color: var(--desc); font-size: 14px; font-weight: 500; }
+    .links a:not(.btn):not(.gh-btn):hover { color: var(--text); }
+
+    /* GitHub Star 按钮 */
+    .gh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-pill);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.2;
+      white-space: nowrap;
+      transition: border-color .2s ease, background-color .2s ease;
+    }
+    .gh-btn:hover { border-color: hsla(0, 0%, 100%, .32); background: hsla(0, 0%, 100%, .08); }
+    .gh-btn .gh-sep { width: 1px; height: 16px; background: var(--border-strong); }
+    .gh-btn #star-count { color: #f7c948; font: 500 13.5px/1 var(--font-mono); }
+    .gh-btn:focus-visible, .btn:focus-visible, button:focus-visible {
+      outline: 2px solid var(--brand-2);
+      outline-offset: 2px;
+    }
+
+    /* ---------- 按钮 ---------- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 0 22px;
+      border: 1px solid transparent;
+      border-radius: var(--r-pill);
+      background: #fff;
+      color: #0a0a0a;
+      font: 500 15px/1.2 var(--font-sans);
+      transition: background-color .2s ease, transform .16s ease, border-color .2s ease;
+    }
+    .btn:hover { background: #e8ebf5; transform: translateY(-1px); }
+    .btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+    .btn.secondary:hover { background: hsla(0, 0%, 100%, .07); border-color: hsla(0, 0%, 100%, .3); }
+
+    /* ---------- 渐变描边胶囊 ---------- */
+    .pill {
+      display: inline-flex;
+      padding: 1px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, .42) 0%, rgba(255, 255, 255, .08) 35%, rgba(255, 255, 255, .04) 65%, rgba(255, 255, 255, .28) 100%);
+      box-shadow: 0 0 16px rgba(255, 255, 255, .08), 0 0 32px rgba(255, 255, 255, .04);
+    }
+    .pill > span {
+      padding: 6px 9px 5px;
+      border-radius: 7px;
+      background: rgba(0, 0, 0, .25);
+      color: rgba(255, 255, 255, .95);
+      font: 500 12px/1 var(--font-mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    /* ---------- 标题 ---------- */
+    h1, h2 {
+      font-family: var(--font-display);
+      font-weight: 500;
+      letter-spacing: -.02em;
+    }
+    h1 {
+      margin: 22px 0 0;
+      font-size: clamp(34px, 4.6vw, 58px);
+      line-height: 1.28;
+    }
+    h1 .blue { color: var(--brand-2); }
+    h2 {
+      margin: 16px 0 0;
+      font-size: clamp(26px, 3.2vw, 36px);
+      line-height: 1.5;
+    }
+
+    /* ---------- Hero ---------- */
+    .hero {
+      min-height: min(88vh, 920px);
+      display: grid;
+      align-items: center;
+      padding: 72px 0;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 60fr 40fr;
+      align-items: center;
+      gap: 64px;
+    }
+    .hero-text {
+      margin: 20px 0 0;
+      max-width: 540px;
+      color: var(--desc);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .hero-text + .hero-text { margin-top: 8px; }
+    .actions { flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .link-row {
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-top: 26px;
+      color: var(--dim);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .link-row a { border-bottom: 1px solid rgba(155, 163, 178, .4); transition: color .18s ease, border-color .18s ease; }
+    .link-row a:hover { color: var(--text); border-color: var(--text); }
+
+    /* 终端面板 */
+    .terminal-box {
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: var(--r-media);
+      background: rgba(0, 0, 0, .2);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      overflow: hidden;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, .5);
+    }
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 44px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dots { display: flex; gap: 7px; }
+    .dots i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+    .dots i:nth-child(2) { background: #febc2e; }
+    .dots i:nth-child(3) { background: #28c840; }
+    .copy {
+      flex-shrink: 0;
+      padding: 4px 6px;
+      border: 0;
+      background: none;
+      color: var(--desc);
+      font: 400 12px/1.4 var(--font-sans);
+      cursor: pointer;
+      transition: color .18s ease;
+    }
+    .copy:hover { color: var(--text); }
+    .terminal-body { padding: 20px 22px; }
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      font: 14px/1.8 var(--font-mono);
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .p { color: var(--brand); user-select: none; }
+
+    /* ---------- 通用分节 ---------- */
+    section { padding: 110px 0; }
+    .section-head { text-align: center; max-width: 640px; margin: 0 auto 56px; }
+    .section-head p {
+      margin: 14px 0 0;
+      color: var(--desc);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* ---------- 卖点（官方原则卡风格） ---------- */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .feature {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      height: 100%;
+      padding: 32px 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-media);
+      background: var(--surface-3);
+      transition: border-color .25s ease, transform .25s ease, box-shadow .25s ease;
+    }
+    .feature:hover {
+      border-color: hsla(0, 0%, 100%, .16);
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
+    }
+    .feature .icon { color: var(--text); opacity: .75; margin-bottom: 18px; }
+    .feature h3 { margin: 0 0 8px; font-size: 18px; font-weight: 500; letter-spacing: -.01em; }
+    .feature .label {
+      margin: 0 0 12px;
+      color: var(--dim);
+      font: 11px/1 var(--font-mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .feature p { margin: 0; color: var(--desc); font-size: 14px; line-height: 1.65; }
+
+    /* ---------- 步骤（官方快速体验卡风格） ---------- */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      align-items: stretch;
+    }
+    .step {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 32px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-media);
+      background: var(--surface-3);
+      transition: border-color .25s ease, transform .25s ease, box-shadow .25s ease;
+    }
+    .step:hover {
+      border-color: hsla(0, 0%, 100%, .16);
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
+    }
+    .step h3 { margin: 0 0 10px; font-size: 20px; font-weight: 500; letter-spacing: -.01em; }
+    .step p { margin: 0; color: var(--desc); font-size: 16px; line-height: 1.7; }
+    .code-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: auto;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-media);
+      background: var(--surface-1);
+      color: var(--text);
+      font: 14px/1.6 var(--font-mono);
+    }
+    .code-row code {
+      min-width: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .step p + .code-row { margin-top: 18px; }
+
+    /* ---------- 下载 ---------- */
+    .download-panel {
+      padding: 56px 48px;
+      text-align: center;
+      border: 1px solid var(--border);
+      border-radius: var(--r-card);
+      background:
+        radial-gradient(120% 140% at 50% -20%, rgba(77, 107, 254, .14), transparent 55%),
+        var(--surface-3);
+    }
+    .download-panel p {
+      max-width: 560px;
+      margin: 14px auto 0;
+      color: var(--desc);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .download-panel .actions { justify-content: center; margin-top: 30px; }
+
+    /* ---------- 页脚 ---------- */
+    footer {
+      padding: 34px 0 46px;
+      border-top: 1px solid var(--border);
+      color: var(--dim);
+      font-size: 13px;
+      line-height: 1.9;
+    }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .footer-links { display: flex; gap: 18px; flex-wrap: wrap; }
+    .footer-links a { transition: color .18s ease; }
+    .footer-links a:hover { color: var(--text); }
+
+    /* ---------- 动画 ---------- */
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(22px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .rise { animation: rise .9s cubic-bezier(.2, .7, .3, 1) both; }
+    .rise-1 { animation-delay: .08s; }
+    .rise-2 { animation-delay: .18s; }
+    .rise-3 { animation-delay: .28s; }
+    .rise-4 { animation-delay: .4s; }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity .7s ease, transform .7s ease;
+    }
+    .reveal.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .rise, .reveal { animation: none; transition: none; opacity: 1; transform: none; }
+    }
+
+    /* ---------- 响应式 ---------- */
+    @media (max-width: 960px) {
+      .links > a:not(.gh-btn) { display: none; }
+      .hero { min-height: 0; padding: 64px 0 80px; }
+      .hero-grid { grid-template-columns: 1fr; gap: 44px; }
+      .hero-grid > div:first-child { text-align: center; }
+      .hero-text { margin-left: auto; margin-right: auto; }
+      .hero-grid .actions, .hero-grid .link-row { justify-content: center; }
+      .features, .steps { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .wrap { width: min(100% - 32px, 1140px); }
+      .nav-inner { min-height: 60px; }
+      .brand span {
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hero { padding: 48px 0 64px; }
+      h1 { font-size: 34px; }
+      section { padding: 80px 0; }
+      .actions { align-items: stretch; flex-direction: column; }
+      .actions .btn { width: 100%; }
+      .gh-btn { min-height: 34px; padding: 0 12px; }
+      .gh-btn .gh-star-text { display: none; }
+      .terminal-body { padding: 16px; }
+      pre { font-size: 13px; }
+      .step { padding: 26px 24px; }
+      .download-panel { padding: 40px 24px; }
+      .footer-inner { flex-direction: column; gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top" aria-label="返回首页">
+        <img src="ICON_256.PNG" alt="">
+        <span>DeepSeek Harness × fnOS</span>
+      </a>
+      <nav class="links" aria-label="页面导航">
+        <a href="#features">特性</a>
+        <a href="#start">使用</a>
+        <a href="#download">下载</a>
+        <a class="gh-btn" href="https://github.com/javen-yan/deepseek-harness-fnos" target="_blank" rel="noopener noreferrer" aria-label="GitHub 仓库">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span class="gh-star-text">Star</span>
+          <span class="gh-sep" aria-hidden="true"></span>
+          <span id="star-count">0</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <div class="pill rise rise-1"><span>DeepSeek Harness × fnOS</span></div>
+          <h1 class="rise rise-2">你的 NAS，从此有了<br>自己的 <span class="blue">Agent</span></h1>
+          <p class="hero-text rise rise-3">把 DeepSeek Harness 装进飞牛OS：上传即装，开机即用。一个常驻家中、随叫随到的 AI 助手。</p>
+          <div class="actions rise rise-4">
+            <a class="btn" href="#download">立即下载</a>
+            <a class="btn secondary" href="#features">了解特性</a>
+          </div>
+          <div class="link-row rise rise-4">
+            <a href="https://www.deepseek.com/harness/" target="_blank" rel="noopener noreferrer">DeepSeek Harness 官方页</a>
+            <a href="https://fnnas.com/" target="_blank" rel="noopener noreferrer">fnOS 官网</a>
+            <a href="https://github.com/javen-yan/deepseek-harness-fnos" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </div>
+        </div>
+
+        <div class="terminal-box rise rise-4" aria-label="安装示意">
+          <div class="terminal-head">
+            <div class="dots"><i></i><i></i><i></i></div>
+            <button type="button" class="copy" data-copy="cmd-hero">复制</button>
+          </div>
+          <div class="terminal-body">
+            <pre id="cmd-hero"><span class="p">$ </span>下载 FPK 安装包
+<span class="p">$ </span>在 fnOS 应用中心上传安装
+<span class="p">$ </span>打开应用，配对即用</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 特性 -->
+    <section id="features">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="pill"><span>WHY FNOS</span></div>
+          <h2>为 NAS 而生的 Agent</h2>
+          <p>模型是 Agent 的灵魂，Harness 赋予它理解环境、使用工具、持续执行的能力。现在，它装进了你的 NAS。</p>
+        </div>
+
+        <div class="features">
+          <article class="feature reveal" style="transition-delay:0ms">
+            <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><path d="M36 12L58 24V48L36 60L14 48V24L36 12Z" stroke="currentColor" stroke-width="1.2"/><path d="M14.5 24L36 36L57.5 24M36 36V59.5" stroke="currentColor" stroke-width="1.2"/></svg></span>
+            <h3>上传即装</h3>
+            <p class="label">UPLOAD &amp; GO</p>
+            <p>在应用中心上传安装包，一分钟完成部署。无需 Docker、无需命令行，装完就能用。</p>
+          </article>
+          <article class="feature reveal" style="transition-delay:80ms">
+            <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><circle cx="36" cy="36" r="4" stroke="currentColor" stroke-width="1.2"/><circle cx="36" cy="36" r="1.5" fill="currentColor"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(90 36 36)"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(30 36 36)"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(150 36 36)"/></svg></span>
+            <h3>持续在线</h3>
+            <p class="label">ALWAYS ON</p>
+            <p>NAS 7×24 常驻，任务不因关机而中断。长任务挂到后台慢慢跑，走到哪都能接入。</p>
+          </article>
+          <article class="feature reveal" style="transition-delay:160ms">
+            <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><rect x="17" y="32" width="38" height="26" rx="4" stroke="currentColor" stroke-width="1.2"/><path d="M24 32V24C24 17.4 29.4 12 36 12C42.6 12 48 17.4 48 24V32" stroke="currentColor" stroke-width="1.2"/><circle cx="36" cy="45" r="2.5" fill="currentColor"/><path d="M36 47.5V53" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+            <h3>安全可控</h3>
+            <p class="label">PRIVATE &amp; SAFE</p>
+            <p>服务仅在本机运行，六位配对码认证访问，数据与工作文件都留在自己的设备上。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 步骤 -->
+    <section id="start">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="pill"><span>开始使用</span></div>
+          <h2>三步，把 Agent 带回家</h2>
+          <p>从下载到配对，全程无需命令行。适配 fnOS 1.2 及以上版本。</p>
+        </div>
+
+        <div class="steps">
+          <article class="step reveal" style="transition-delay:0ms">
+            <h3>下载安装包</h3>
+            <p>按设备架构选择 x86 或 ARM 版本，下载到本地。</p>
+            <div class="code-row">
+              <code><span class="p">$ </span>下载 deepseek_harness-&lt;version&gt;-x86.fpk</code>
+              <button type="button" class="copy" data-copy="cmd-1">复制</button>
+            </div>
+            <pre id="cmd-1" hidden>下载 deepseek_harness-&lt;version&gt;-x86.fpk</pre>
+          </article>
+          <article class="step reveal" style="transition-delay:80ms">
+            <h3>上传到 fnOS</h3>
+            <p>在应用中心上传安装包，等待安装完成即可。</p>
+            <div class="code-row">
+              <code><span class="p">$ </span>在 fnOS 应用中心上传安装</code>
+              <button type="button" class="copy" data-copy="cmd-2">复制</button>
+            </div>
+            <pre id="cmd-2" hidden>在 fnOS 应用中心上传安装</pre>
+          </article>
+          <article class="step reveal" style="transition-delay:160ms">
+            <h3>配对即用</h3>
+            <p>打开应用入口，输入配对码，进入你的专属工作台。</p>
+            <div class="code-row">
+              <code><span class="p">$ </span>打开应用，配对即用</code>
+              <button type="button" class="copy" data-copy="cmd-3">复制</button>
+            </div>
+            <pre id="cmd-3" hidden>打开应用，配对即用</pre>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 下载 -->
+    <section id="download">
+      <div class="wrap">
+        <div class="download-panel reveal">
+          <div class="pill"><span>DOWNLOAD</span></div>
+          <h2>立即下载 DeepSeek Harness fnOS 版</h2>
+          <p>开源 · 免费 · MIT 协议。x86 与 ARM 架构均提供完整安装包，GitHub Releases 持续更新。</p>
+          <div class="actions">
+            <a class="btn" href="https://github.com/javen-yan/deepseek-harness-fnos/releases" target="_blank" rel="noopener noreferrer">下载 x86 FPK</a>
+            <a class="btn secondary" href="https://github.com/javen-yan/deepseek-harness-fnos/releases" target="_blank" rel="noopener noreferrer">下载 ARM FPK</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div>
+        <span>DeepSeek Harness × fnOS · 开源 · MIT</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/javen-yan/deepseek-harness-fnos" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/javen-yan/deepseek-harness-fnos/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+        <a href="https://www.deepseek.com/harness/" target="_blank" rel="noopener noreferrer">Harness 官方页</a>
+        <a href="https://fnnas.com/" target="_blank" rel="noopener noreferrer">fnOS 官网</a>
+      </div>
+      <div>
+        <span>DeepSeek Harness 与 fnOS（飞牛OS）商标归各自权利方所有</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // 复制按钮
+    document.querySelectorAll("[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const el = document.getElementById(btn.dataset.copy);
+        if (!el) return;
+        await navigator.clipboard.writeText(el.textContent.trim());
+        const orig = btn.textContent;
+        btn.textContent = "已复制";
+        setTimeout(() => { btn.textContent = orig; }, 1400);
+      });
+    });
+
+    // GitHub star 数量（实时拉取，8 秒超时；网络不可用时保留初始值）
+    const starEl = document.getElementById("star-count");
+    const starAbort = new AbortController();
+    const starTimer = setTimeout(() => starAbort.abort(), 8000);
+    fetch("https://api.github.com/repos/javen-yan/deepseek-harness-fnos", {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: starAbort.signal
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("bad status"))))
+      .then((data) => {
+        if (typeof data.stargazers_count !== "number") return;
+        const n = data.stargazers_count;
+        starEl.textContent = n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
+      })
+      .catch(() => { /* 请求失败或超时：保留初始兜底值 */ })
+      .finally(() => clearTimeout(starTimer));
+
+    // 滚动进入视口时淡入
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in");
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12 });
+      document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+    } else {
+      document.querySelectorAll(".reveal").forEach((el) => el.classList.add("in"));
+    }
+  </script>
+</body>
+</html>

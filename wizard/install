@@ -1,0 +1,29 @@
+[
+  {
+    "stepTitle": "DeepSeek Harness 运行设置",
+    "items": [
+      {
+        "type": "password",
+        "field": "wizard_admin_password",
+        "label": "管理密码",
+        "desc": "用于进入网关管理页查看和刷新一次性配对码，至少 8 位。",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入管理密码"
+          },
+          {
+            "min": 8,
+            "message": "管理密码至少需要 8 位"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_extra_access_paths",
+        "label": "额外可访问目录",
+        "desc": "可选。多个路径用英文冒号或换行分隔，例如 /vol1/Files:/vol2/Projects。"
+      }
+    ]
+  }
+]

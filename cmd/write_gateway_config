@@ -1,0 +1,99 @@
+#!/bin/bash
+set -e
+
+export PATH="/var/apps/nodejs_v22/target/bin:$PATH"
+
+APP_DIR="$TRIM_APPDEST"
+DATA_DIR="$TRIM_PKGVAR"
+CONFIG_DIR="$DATA_DIR/gateway"
+CONFIG_FILE="$CONFIG_DIR/gateway.conf"
+PASSWORD_FILE="$CONFIG_DIR/admin-password.json"
+ADMIN_AUTH_JS="$APP_DIR/runtime/node_modules/@fnos/deepseek-harness-gateway/lib/admin-auth.js"
+
+write_error() {
+  local message="$1"
+  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    echo "$message" > "$TRIM_TEMP_LOGFILE"
+  else
+    echo "$message" >&2
+  fi
+}
+
+fail() {
+  write_error "$1"
+  exit 1
+}
+
+shell_quote() {
+  printf "%s" "$1" | sed "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/"
+}
+
+existing_value() {
+  local key="$1"
+  if [ -f "$CONFIG_FILE" ]; then
+    awk -F= -v key="$key" '$1 == key { gsub(/^'\''|'\''$/, "", $2); print $2; exit }' "$CONFIG_FILE"
+  elif [ -f "$APP_DIR/gateway.conf" ]; then
+    awk -F= -v key="$key" '$1 == key { gsub(/^'\''|'\''$/, "", $2); print $2; exit }' "$APP_DIR/gateway.conf"
+  fi
+}
+
+mkdir -p "$CONFIG_DIR"
+
+admin_password="${wizard_admin_password:-${ADMIN_PASSWORD:-}}"
+if [ -n "$admin_password" ]; then
+  if [ "${#admin_password}" -lt 8 ]; then
+    fail "Admin password must be at least 8 characters."
+  fi
+  [ -f "$ADMIN_AUTH_JS" ] || fail "Gateway admin auth module is missing."
+  node - "$ADMIN_AUTH_JS" "$PASSWORD_FILE" "$admin_password" <<'NODE'
+const modulePath = process.argv[2];
+const file = process.argv[3];
+const password = process.argv[4];
+const { writePasswordFile } = require(modulePath);
+writePasswordFile(file, password);
+NODE
+elif [ ! -f "$PASSWORD_FILE" ]; then
+  fail "Admin password is required. Please set it in the fnOS app configuration."
+fi
+
+extra_access_paths="${wizard_extra_access_paths:-${GATEWAY_EXTRA_ACCESS_PATHS:-$(existing_value GATEWAY_EXTRA_ACCESS_PATHS)}}"
+extra_access_paths="$(printf "%s" "$extra_access_paths" | tr '\n,;' ':::' | sed 's/[[:space:]]//g; s/::*$//; s/^::*//; s/::*/:/g')"
+entry_source="${GATEWAY_ENTRY_SOURCE:-$(existing_value GATEWAY_ENTRY_SOURCE)}"
+case "$entry_source" in
+  runtime)
+    gateway_mode="${GATEWAY_MODE:-$(existing_value GATEWAY_MODE)}"
+    gateway_port="${GATEWAY_PORT:-$(existing_value GATEWAY_PORT)}"
+    case "$gateway_mode" in
+      path|port) ;;
+      *) fail "Gateway mode must be path or port when GATEWAY_ENTRY_SOURCE=runtime." ;;
+    esac
+    case "$gateway_port" in
+      ''|*[!0-9]*) fail "Gateway port must be a number when GATEWAY_ENTRY_SOURCE=runtime." ;;
+      *) ;;
+    esac
+    if [ "$gateway_port" -lt 1 ] || [ "$gateway_port" -gt 65535 ]; then
+      fail "Gateway port must be between 1 and 65535."
+    fi
+    ;;
+  ''|common)
+    entry_source="common"
+    ;;
+  *)
+    fail "Gateway entry source must be common or runtime."
+    ;;
+esac
+
+{
+  echo "# Written by fnOS config_callback. Do not edit while the app is running."
+  echo "GATEWAY_ENTRY_SOURCE=$(shell_quote "$entry_source")"
+  if [ "$entry_source" = "runtime" ]; then
+    echo "GATEWAY_MODE=$(shell_quote "$gateway_mode")"
+    echo "GATEWAY_PORT=$(shell_quote "$gateway_port")"
+  fi
+  echo "GATEWAY_SESSION_DAYS='30'"
+  echo "GATEWAY_ADMIN_SESSION_DAYS='30'"
+  echo "GATEWAY_PAIRING_TTL_SECONDS='300'"
+  echo "GATEWAY_EXTRA_ACCESS_PATHS=$(shell_quote "$extra_access_paths")"
+} > "$CONFIG_FILE"
+
+chmod 600 "$CONFIG_FILE" >/dev/null 2>&1 || true
