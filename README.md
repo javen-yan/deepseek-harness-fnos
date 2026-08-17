@@ -6,6 +6,10 @@ Project page: [https://javen-yan.github.io/deepseek-harness-fnos/](https://javen
 
 Local page source: [`site/index.html`](site/index.html)
 
+Maintainer and publisher: [javen-yan](https://javen-yan.github.io/)
+
+Current recommended version: `0.1.0-rc.6-17`.
+
 The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
 Ordinary users should download only the matching Full FPK from GitHub Releases:
@@ -30,16 +34,13 @@ TRIM_APPDEST/
       .bin/dsh
       @fnos/dsh-fnos-access/
         package.json
-        lib/index.js
         lib/edge-proxy.cjs
         lib/admin-auth.cjs
-        scripts/patch-dsh-core.cjs
       node-pty/build/Release/pty.node
       @deepseek-ai/dsh-web-frontend/dist/index.html
       @deepseek-ai/dsh-app-boot/lib/index.js
       pnpm/bin/pnpm.mjs
   proxy.js
-  app.sock
 ```
 
 The NAS never runs `npm install`, `npm ci`, or `npx`, so native modules are not compiled on the user device.
@@ -99,14 +100,12 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 
 - fnOS dependency: `nodejs_v22`
 - Harness bind: `127.0.0.1:3080`
-- fnOS path entry: `/app/deepseek_harness/` when the App Center entry uses `gatewayPrefix` and `gatewaySocket`
-- Gateway port entry: `http://<NAS_IP>:3081/`
-- Gateway socket: `TRIM_APPDEST/app.sock` in path entry mode
+- Gateway entry: `http://<NAS_IP>:3081/`
+- fnOS App Center entry: one URL entry, port `3081`, path `/`
 - Install log: `TRIM_PKGVAR/logs/install.log`
 - Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
 - Gateway log: `TRIM_PKGVAR/logs/gateway-proxy.log`
 - Gateway access log: `TRIM_PKGVAR/logs/gateway-access.log`
-- Gateway install log: `TRIM_PKGVAR/logs/gateway-install.log`
 - dshmarket log: `TRIM_PKGVAR/logs/dshmarket-install.log`
 
 `192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the bundled fnOS access package.
@@ -115,25 +114,23 @@ Gateway/access source is intentionally maintained separately. It lives in [`jave
 
 `build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
 
-The fnOS App Center entry opens one gateway mode at a time. Path mode uses the
-fnOS unified gateway socket; port mode listens on the configured LAN port.
-Harness realtime traffic stays on the same selected entry and uses the official
-WebSocket transport:
-
-- Path mode: `http://<NAS_IP>:5666/app/deepseek_harness/`
-- Port mode: `http://<NAS_IP>:3081/`
-
-The install/config wizard does not configure the access path or port. It only stores the management password and optional extra writable paths. If a fnOS build cannot edit the App Center entry fields, set `GATEWAY_ENTRY_SOURCE=runtime` plus `GATEWAY_MODE` and `GATEWAY_PORT` in `TRIM_PKGVAR/gateway/gateway.conf` as a fallback. Port mode does not create `app.sock`.
+The fnOS App Center entry is a single URL entry with port `3081` and path `/`.
+The install/config wizard only stores the management password. Extra user
+directories should be granted from the fnOS app settings "Access Permissions"
+page, the same model used by apps such as Gitea.
 
 Access is password based:
 
 - `/fnos-access/login` requires the management password configured in the fnOS wizard.
 - Login sets one HttpOnly `fnos_dsh_access` cookie and returns directly to the official DSH Web UI.
-- The bundled DSH plugin gates HTML fallback, `/api`, `/plugins`, plugin HMR events, and WebSocket upgrades inside the DSH server.
-- The thin edge proxy only strips the fnOS path prefix and forwards HTTP/WebSocket traffic to `127.0.0.1:3080` with loopback `Host` and `Origin`.
-- The plugin injects a small `crypto.randomUUID` polyfill and path-prefix shim for LAN HTTP/path mode.
+- The edge proxy gates browser access and then forwards HTTP/WebSocket traffic unchanged to `127.0.0.1:3080` with loopback `Host` and `Origin`.
+- The edge proxy injects only a small `crypto.randomUUID` polyfill into HTML for LAN HTTP browsers. The polyfill is inserted immediately after `<head>` so it runs before the DSH boot script.
 
-The runtime build applies deterministic gate patches to official DSH route packages and fails if any marker is missing. Runtime access control therefore lives at the DSH route boundary rather than in a large reverse-proxy reimplementation.
+Verified on an x86 fnOS device:
+
+- App Center only shows `DeepSeek Harness 端口入口`.
+- The app listens on `0.0.0.0:3081`; DSH itself stays on `127.0.0.1:3080`.
+- Authenticated HTML contains the `crypto.randomUUID` polyfill before `window.__DSH_BOOT__`.
 
 Writable user data starts with fnOS data-share directories declared in `config/resource`:
 
@@ -141,7 +138,9 @@ Writable user data starts with fnOS data-share directories declared in `config/r
 - `deepseek-harness/profiles`
 - `deepseek-harness/exports`
 
-Additional writable directories can be added from the runtime configuration wizard. They are validated on startup before DSH starts.
+Additional writable directories can be added from the fnOS app settings access
+permission page. Granted directories are passed by fnOS and validated on startup
+before DSH starts.
 
 Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
 

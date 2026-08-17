@@ -20,14 +20,9 @@ GATEWAY_INSTALL_LOGFILE="$LOG_DIR/gateway-install.log"
 MARKET_LOGFILE="$LOG_DIR/dshmarket-install.log"
 MARKET_MARKER="$DATA_DIR/dshmarket-install.done"
 BIN_DIR="$TMP_DIR/bin"
-SOCKET_PATH="$APP_DIR/app.sock"
-GATEWAY_MODE="${GATEWAY_MODE:-}"
-GATEWAY_PREFIX="${GATEWAY_PREFIX:-/app/deepseek_harness}"
 GATEWAY_PORT="${GATEWAY_PORT:-3081}"
-GATEWAY_PATH_PORT="${GATEWAY_PATH_PORT:-5666}"
 GATEWAY_HOST="${GATEWAY_HOST:-0.0.0.0}"
 GATEWAY_SESSION_DAYS="${GATEWAY_SESSION_DAYS:-30}"
-GATEWAY_EXTRA_ACCESS_PATHS="${GATEWAY_EXTRA_ACCESS_PATHS:-}"
 ADMIN_PASSWORD_FILE="$DATA_DIR/gateway/admin-password.json"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
@@ -50,60 +45,8 @@ load_gateway_config() {
     . "$DATA_DIR/gateway/gateway.conf"
   fi
 
-  if [ "${GATEWAY_ENTRY_SOURCE:-common}" != "runtime" ]; then
-    entry_config="$(
-      node - "$APP_DIR/ui/config" <<'NODE' 2>/dev/null || true
-const fs = require("fs");
-const file = process.argv[2];
-const config = JSON.parse(fs.readFileSync(file, "utf8"));
-const entry = config[".url"] && config[".url"]["deepseek_harness.main"];
-if (!entry) process.exit(0);
-function line(key, value) {
-  if (value === undefined || value === null || value === "") return;
-  console.log(`${key}=${JSON.stringify(String(value))}`);
-}
-if (entry.gatewaySocket && entry.gatewayPrefix) {
-  line("GATEWAY_MODE", "path");
-  line("GATEWAY_PREFIX", entry.gatewayPrefix);
-} else if (entry.port) {
-  line("GATEWAY_MODE", "port");
-  line("GATEWAY_PORT", entry.port);
-}
-NODE
-    )"
-    if [ -n "$entry_config" ]; then
-      eval "$entry_config"
-    fi
-  fi
-
-  if [ -z "${GATEWAY_MODE:-}" ]; then
-    if [ "${GATEWAY_ENABLE_PATH:-1}" = "1" ]; then
-      GATEWAY_MODE="path"
-    else
-      GATEWAY_MODE="port"
-    fi
-  fi
-  case "$GATEWAY_MODE" in
-    path)
-      GATEWAY_ENABLE_PATH=1
-      GATEWAY_ENABLE_PORT=0
-      ;;
-    port)
-      GATEWAY_ENABLE_PATH=0
-      GATEWAY_ENABLE_PORT=1
-      ;;
-    *) write_error "GATEWAY_MODE must be path or port."; exit 1 ;;
-  esac
-  case "$GATEWAY_PREFIX" in
-    /*) ;;
-    *) write_error "GATEWAY_PREFIX must start with /."; exit 1 ;;
-  esac
   case "$GATEWAY_PORT" in
     ''|*[!0-9]*) write_error "GATEWAY_PORT must be a number."; exit 1 ;;
-    *) ;;
-  esac
-  case "$GATEWAY_PATH_PORT" in
-    ''|*[!0-9]*) write_error "GATEWAY_PATH_PORT must be a number."; exit 1 ;;
     *) ;;
   esac
   case "$GATEWAY_SESSION_DAYS" in
@@ -144,9 +87,6 @@ configure_data_shares() {
   for dir in ${TRIM_DATA_ACCESSIBLE_PATHS:-}; do
     add_writable_dir "$dir"
   done
-  for dir in ${GATEWAY_EXTRA_ACCESS_PATHS:-}; do
-    add_writable_dir "$dir"
-  done
   IFS="$old_ifs"
 
   old_ifs="$IFS"
@@ -164,6 +104,12 @@ configure_data_shares() {
   IFS="$old_ifs"
 
   mkdir -p "$PROFILE_DIR/home" "$PROFILE_DIR/dsh" "$PROFILE_DIR/config" "$PROFILE_DIR/data" "$TMP_DIR/cache"
+}
+
+fix_sensitive_profile_permissions() {
+  if [ -f "$PROFILE_DIR/dsh/.credentials.yaml" ]; then
+    chmod 600 "$PROFILE_DIR/dsh/.credentials.yaml" >/dev/null 2>&1 || true
+  fi
 }
 
 pidfile_matches() {
@@ -188,9 +134,6 @@ is_proxy_running() {
 
 is_running() {
   is_dsh_running && is_proxy_running || return 1
-  if [ "$GATEWAY_ENABLE_PATH" = "1" ] && [ ! -S "$SOCKET_PATH" ]; then
-    return 1
-  fi
   return 0
 }
 
@@ -207,7 +150,7 @@ require_dependencies() {
     write_error "DeepSeek Harness runtime is missing pnpm. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
-  if [ ! -f "$ACCESS_PLUGIN_DIR/lib/index.js" ] || [ ! -f "$ACCESS_PLUGIN_DIR/lib/edge-proxy.cjs" ]; then
+  if [ ! -f "$ACCESS_PLUGIN_DIR/lib/edge-proxy.cjs" ] || [ ! -f "$ACCESS_PLUGIN_DIR/lib/admin-auth.cjs" ]; then
     write_error "DeepSeek Harness fnOS access package is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
@@ -223,13 +166,15 @@ const fs = require("fs");
 const file = process.argv[2];
 const packageJson = JSON.parse(fs.readFileSync(file, "utf8"));
 let changed = false;
-if (packageJson.dependencies && packageJson.dependencies["@fnos/deepseek-harness-gateway"]) {
-  delete packageJson.dependencies["@fnos/deepseek-harness-gateway"];
-  changed = true;
+for (const name of ["@fnos/deepseek-harness-gateway", "@fnos/dsh-fnos-access"]) {
+  if (packageJson.dependencies && packageJson.dependencies[name]) {
+    delete packageJson.dependencies[name];
+    changed = true;
+  }
 }
 const bundles = packageJson.dsh && packageJson.dsh.profile && packageJson.dsh.profile.bundles;
 if (Array.isArray(bundles)) {
-  const filtered = bundles.filter((item) => item !== "@fnos/deepseek-harness-gateway");
+  const filtered = bundles.filter((item) => item !== "@fnos/deepseek-harness-gateway" && item !== "@fnos/dsh-fnos-access");
   if (filtered.length !== bundles.length) {
     packageJson.dsh.profile.bundles = filtered;
     changed = true;
@@ -237,41 +182,9 @@ if (Array.isArray(bundles)) {
 }
 if (changed) {
   fs.writeFileSync(file, `${JSON.stringify(packageJson, null, 2)}\n`);
-  console.log(`${new Date().toISOString()} removed legacy @fnos/deepseek-harness-gateway from web profile`);
+  console.log(`${new Date().toISOString()} removed fnOS access packages from web profile`);
 }
 NODE
-}
-
-install_gateway_plugin_once() {
-  marker="$DATA_DIR/fnos-access-plugin-install.done"
-  if [ -f "$marker" ]; then
-    return 0
-  fi
-
-  (
-    export HOME="${PROFILE_DIR:-$HOME_DIR/home}"
-    export DSH_HOME="${PROFILE_DIR:-$HOME_DIR}/dsh"
-    export XDG_CONFIG_HOME="${PROFILE_DIR:-$DATA_DIR}/config"
-    export XDG_DATA_HOME="${PROFILE_DIR:-$DATA_DIR}/data"
-    export XDG_CACHE_HOME="$TMP_DIR/cache"
-    mkdir -p "$BIN_DIR"
-    cat > "$BIN_DIR/pnpm" <<EOF
-#!/bin/sh
-exec /var/apps/nodejs_v22/target/bin/node "$PNPM_BIN" "\$@"
-EOF
-    chmod +x "$BIN_DIR/pnpm"
-    export PATH="$BIN_DIR:$PATH"
-    cd "$RUNTIME_DIR" || exit 0
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing bundled fnOS access plugin from $ACCESS_PLUGIN_DIR..." >> "$GATEWAY_INSTALL_LOGFILE"
-    set +e
-    "$DSH_BIN" plugin --profile web add "file:$ACCESS_PLUGIN_DIR" >> "$GATEWAY_INSTALL_LOGFILE" 2>&1
-    status="$?"
-    set -e
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - gateway plugin installer exited with $status" >> "$GATEWAY_INSTALL_LOGFILE"
-    if [ "$status" = "0" ]; then
-      touch "$marker"
-    fi
-  ) || true
 }
 
 build_trusted_host_args() {
@@ -326,6 +239,7 @@ start_app() {
   mkdir -p "$DATA_DIR" "$TMP_DIR" "$HOME_DIR" "$LOG_DIR"
   load_gateway_config
   configure_data_shares
+  fix_sensitive_profile_permissions
 
   if [ ! -f "$ADMIN_PASSWORD_FILE" ]; then
     write_error "Gateway admin password is not configured. Open the fnOS app configuration and set a management password."
@@ -345,7 +259,6 @@ start_app() {
   export XDG_CACHE_HOME="$TMP_DIR/cache"
 
   migrate_legacy_gateway_profile
-  install_gateway_plugin_once
 
   if ! is_dsh_running; then
     set -- "$DSH_BIN" web --host "$HOST" --port "$PORT"
@@ -356,9 +269,6 @@ start_app() {
 
     current_dir="$(pwd)"
     cd "$WORKSPACE_DIR"
-    FNOS_ACCESS_PREFIX="$([ "$GATEWAY_ENABLE_PATH" = "1" ] && printf "%s" "$GATEWAY_PREFIX" || printf "")" \
-    FNOS_ACCESS_PASSWORD_FILE="$ADMIN_PASSWORD_FILE" \
-    FNOS_ACCESS_SESSION_MAX_AGE_SECONDS="$((GATEWAY_SESSION_DAYS * 24 * 60 * 60))" \
     nohup "$@" >> "$LOGFILE" 2>&1 &
     echo "$!" > "$PIDFILE"
     cd "$current_dir"
@@ -370,40 +280,26 @@ start_app() {
     exit 1
   fi
 
-  if ! is_proxy_running || { [ "$GATEWAY_ENABLE_PATH" = "1" ] && [ ! -S "$SOCKET_PATH" ]; }; then
-    if [ "$GATEWAY_ENABLE_PATH" = "1" ]; then
-      gateway_socket_path="$SOCKET_PATH"
-      rm -f "$SOCKET_PATH"
-    else
-      gateway_socket_path=""
-      rm -f "$SOCKET_PATH"
-    fi
-    if [ "$GATEWAY_ENABLE_PORT" = "1" ]; then
-      gateway_port="$GATEWAY_PORT"
-    else
-      gateway_port="0"
-    fi
-
-	    SOCKET_PATH="$gateway_socket_path" \
-	    GATEWAY_PREFIX="$GATEWAY_PREFIX" \
-	    GATEWAY_HOST="$GATEWAY_HOST" \
-	    GATEWAY_PORT="$gateway_port" \
-	    GATEWAY_PATH_PORT="$GATEWAY_PATH_PORT" \
-	    GATEWAY_DATA_DIR="$DATA_DIR" \
-	    GATEWAY_LOGFILE="$PROXY_LOGFILE" \
-	    GATEWAY_ACCESS_LOGFILE="$PROXY_ACCESS_LOGFILE" \
-	    GATEWAY_WRITABLE_DIRS="$WRITABLE_DIRS" \
-	    INSTALL_LOGFILE="$LOG_DIR/install.log" \
-	    GATEWAY_INSTALL_LOGFILE="$GATEWAY_INSTALL_LOGFILE" \
-	    DSH_LOGFILE="$LOGFILE" \
-	    MARKET_LOGFILE="$MARKET_LOGFILE" \
-	    UPSTREAM_HOST="$HOST" \
-	    UPSTREAM_PORT="$PORT" \
+  if ! is_proxy_running; then
+    GATEWAY_HOST="$GATEWAY_HOST" \
+    GATEWAY_PORT="$GATEWAY_PORT" \
+    FNOS_ACCESS_PASSWORD_FILE="$ADMIN_PASSWORD_FILE" \
+    FNOS_ACCESS_SESSION_MAX_AGE_SECONDS="$((GATEWAY_SESSION_DAYS * 24 * 60 * 60))" \
+    GATEWAY_DATA_DIR="$DATA_DIR" \
+    GATEWAY_LOGFILE="$PROXY_LOGFILE" \
+    GATEWAY_ACCESS_LOGFILE="$PROXY_ACCESS_LOGFILE" \
+    GATEWAY_WRITABLE_DIRS="$WRITABLE_DIRS" \
+    INSTALL_LOGFILE="$LOG_DIR/install.log" \
+    GATEWAY_INSTALL_LOGFILE="$GATEWAY_INSTALL_LOGFILE" \
+    DSH_LOGFILE="$LOGFILE" \
+    MARKET_LOGFILE="$MARKET_LOGFILE" \
+    UPSTREAM_HOST="$HOST" \
+    UPSTREAM_PORT="$PORT" \
     nohup node "$APP_DIR/proxy.js" >> "$PROXY_LOGFILE" 2>&1 &
     echo "$!" > "$PROXY_PIDFILE"
 
     for _ in 1 2 3 4 5; do
-      if is_proxy_running && { [ "$GATEWAY_ENABLE_PATH" != "1" ] || [ -S "$SOCKET_PATH" ]; }; then
+      if is_proxy_running; then
         break
       fi
       sleep 1
@@ -442,7 +338,6 @@ stop_pidfile() {
 
 stop_app() {
   stop_pidfile "$PROXY_PIDFILE"
-  rm -f "$SOCKET_PATH"
   stop_pidfile "$PIDFILE"
   exit 0
 }

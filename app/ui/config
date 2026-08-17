@@ -1,19 +1,6 @@
 {
   ".url": {
     "deepseek_harness.main": {
-      "title": "DeepSeek Harness",
-      "icon": "images/icon_{0}.png",
-      "type": "iframe",
-      "protocol": "",
-      "gatewayPrefix": "/app/deepseek_harness",
-      "gatewaySocket": "app.sock",
-      "url": "/app/deepseek_harness",
-      "allUsers": true,
-      "control": {
-        "accessPerm": "editable"
-      }
-    },
-    "deepseek_harness.port": {
       "title": "DeepSeek Harness 端口入口",
       "icon": "images/icon_{0}.png",
       "type": "url",
@@ -21,7 +8,6 @@
       "port": "3081",
       "url": "/",
       "allUsers": true,
-      "noDisplay": true,
       "control": {
         "accessPerm": "editable"
       }

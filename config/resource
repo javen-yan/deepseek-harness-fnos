@@ -2,13 +2,28 @@
   "data-share": {
     "shares": [
       {
-        "name": "deepseek-harness/workspaces"
+        "name": "deepseek-harness/workspaces",
+        "permission": {
+          "rw": [
+            "deepseek_harness"
+          ]
+        }
       },
       {
-        "name": "deepseek-harness/profiles"
+        "name": "deepseek-harness/profiles",
+        "permission": {
+          "rw": [
+            "deepseek_harness"
+          ]
+        }
       },
       {
-        "name": "deepseek-harness/exports"
+        "name": "deepseek-harness/exports",
+        "permission": {
+          "rw": [
+            "deepseek_harness"
+          ]
+        }
       }
     ]
   }

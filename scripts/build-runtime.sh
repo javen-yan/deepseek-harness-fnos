@@ -79,23 +79,16 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
     else
       npm ci --omit=dev --no-audit --no-fund
     fi
-    node node_modules/@fnos/dsh-fnos-access/scripts/patch-dsh-core.cjs node_modules
     test -x node_modules/.bin/dsh
     test -f node_modules/node-pty/build/Release/pty.node
     test -f node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
     test -f node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-    test -f node_modules/@fnos/dsh-fnos-access/lib/index.js
     test -f node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs
+    test -f node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs
     test -f node_modules/pnpm/bin/pnpm.mjs
     node -e "require(\"./node_modules/node-pty\")"
     ! grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
-    grep -q "\\[fnos-access patch\\] fallback gate" node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js
-    grep -q "\\[fnos-access patch\\] api gate" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
-    grep -q "\\[fnos-access patch\\] websocket gate" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
-    grep -q "\\[fnos-access patch\\] boot graph prefix" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-    grep -q "\\[fnos-access patch\\] boot graph prefix source" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-    grep -q "\\[fnos-access patch\\] plugin bundle gate" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-    grep -q "\\[fnos-access patch\\] plugin events gate" node_modules/@deepseek-ai/dsh-client-hmr/lib/index.js
+    ! grep -R "\\[fnos-access patch\\]" node_modules/@deepseek-ai >/dev/null
     tar -czf /work/runtime.tgz package.json package-lock.json node_modules
   '
 

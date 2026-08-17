@@ -1,14 +1,14 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-16
+version=0.1.0-rc.6-17
 display_name=DeepSeek Harness
-desc=DeepSeek Harness Web UI native package for fnOS.
+desc=DeepSeek Harness 的 fnOS 原生全量封装，内置 Linux 运行时，并通过 3081 端口提供安全访问入口。
 source=thirdparty
 platform=x86
 
-maintainer=DeepSeek AI
-maintainer_url=https://github.com/deepseek-ai/deepseek-harness
-distributor=fnOS community package
-distributor_url=https://github.com/deepseek-ai/deepseek-harness
+maintainer=javen-yan
+maintainer_url=https://javen-yan.github.io/
+distributor=javen-yan
+distributor_url=https://javen-yan.github.io/
 
 os_min_version=1.2.0
 
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=Read the path-mode plugin bundle prefix from the DSH runtime environment.
+changelog=切换为 3081 端口入口，并使用独立访问网关承载 DeepSeek Harness 官方 Web UI。
