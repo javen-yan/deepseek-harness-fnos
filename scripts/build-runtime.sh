@@ -92,6 +92,8 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
     grep -q "\\[fnos-access patch\\] fallback gate" node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js
     grep -q "\\[fnos-access patch\\] api gate" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
     grep -q "\\[fnos-access patch\\] websocket gate" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
+    grep -q "\\[fnos-access patch\\] boot graph prefix" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
+    grep -q "\\[fnos-access patch\\] boot graph prefix source" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
     grep -q "\\[fnos-access patch\\] plugin bundle gate" node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
     grep -q "\\[fnos-access patch\\] plugin events gate" node_modules/@deepseek-ai/dsh-client-hmr/lib/index.js
     tar -czf /work/runtime.tgz package.json package-lock.json node_modules

@@ -1,11 +1,11 @@
 {
   "name": "fnos-deepseek-harness-runtime",
-  "version": "0.1.0-rc.6-14",
+  "version": "0.1.0-rc.6-16",
   "private": true,
   "description": "Runtime dependencies for the fnOS DeepSeek Harness package.",
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.0-rc.6",
-    "@fnos/dsh-fnos-access": "https://codeload.github.com/javen-yan/dsh-remote-gateway/tar.gz/bc72139",
+    "@fnos/dsh-fnos-access": "https://codeload.github.com/javen-yan/dsh-remote-gateway/tar.gz/742cd2c",
     "pnpm": "11.7.0"
   }
 }
