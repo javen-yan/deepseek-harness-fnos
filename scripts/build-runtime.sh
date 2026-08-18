@@ -87,7 +87,9 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
     test -f node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs
     test -f node_modules/pnpm/bin/pnpm.mjs
     node -e "require(\"./node_modules/node-pty\")"
-    ! grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
+    if [ -f node_modules/@deepseek-ai/dsh-client-connection/lib/index.js ]; then
+      ! grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
+    fi
     ! grep -R "\\[fnos-access patch\\]" node_modules/@deepseek-ai >/dev/null
     tar -czf /work/runtime.tgz package.json package-lock.json node_modules
   '
