@@ -10,6 +10,7 @@ HOME_DIR="$TRIM_PKGHOME"
 LOG_DIR="$DATA_DIR/logs"
 LOGFILE="$LOG_DIR/install.log"
 RUNTIME_DIR="$APP_DIR/runtime"
+NODE_BIN="${NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 
 write_error() {
   local message="$1"
@@ -58,13 +59,16 @@ sha256_file() {
 
 verify_runtime() {
   [ -f "$APP_DIR/profile-bootstrap.mjs" ] || fail "App is missing profile-bootstrap.mjs."
+  [ -f "$APP_DIR/github-download-shim.cjs" ] || fail "App is missing github-download-shim.cjs."
   [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ] || fail "Runtime is missing executable node_modules/.bin/dsh."
   [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html" ] || fail "Runtime is missing DSH web frontend."
   [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" ] || fail "Runtime is missing DSH app boot."
   [ -f "$RUNTIME_DIR/node_modules/dshmarket/cordis.patch.yml" ] || fail "Runtime is missing bundled dshmarket."
   [ -f "$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs" ] || fail "Runtime is missing packaged pnpm."
+  [ -f "$RUNTIME_DIR/node_modules/node-gyp/bin/node-gyp.js" ] || fail "Runtime is missing packaged node-gyp."
+  [ -f "$RUNTIME_DIR/node_modules/prebuild-install/bin.js" ] || fail "Runtime is missing packaged prebuild-install."
 
-  if ! node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
+  if ! "$NODE_BIN" -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
     fail "Runtime node-pty module failed to load. Check $LOGFILE."
   fi
 
@@ -73,10 +77,13 @@ verify_runtime() {
   fi
 }
 
-if ! command -v node >/dev/null 2>&1; then
-  write_error "Node.js runtime is unavailable. Please install or enable nodejs_v24."
-  exit 1
-fi
+verify_system_environment() {
+  [ -n "$NODE_BIN" ] || fail "Node.js is unavailable. Install or enable the fnOS nodejs_v24 dependency."
+  "$NODE_BIN" -e "const [major] = process.versions.node.split('.').map(Number); if (major < 24) process.exit(1)" >/dev/null 2>&1 || fail "DeepSeek Harness requires Node.js 24+. Install or enable fnOS nodejs_v24."
+  for tool in python3 make gcc g++ pkg-config; do
+    command -v "$tool" >/dev/null 2>&1 || fail "DeepSeek Harness plugin builds require system tool '$tool'. Prepare the NAS build environment before installing."
+  done
+}
 
 if ! command -v tar >/dev/null 2>&1; then
   write_error "tar is unavailable. It is required to extract DeepSeek Harness runtime."
@@ -85,6 +92,7 @@ fi
 
 mkdir -p "$LOG_DIR" "$TMP_DIR" "$HOME_DIR"
 cd "$APP_DIR"
+verify_system_environment
 
 if [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ]; then
   log "Runtime already exists; verifying bundled runtime tree."

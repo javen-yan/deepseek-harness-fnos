@@ -1,12 +1,12 @@
 [
   {
-    "stepTitle": "DeepSeek Harness 运行设置",
+    "stepTitle": "访问认证",
     "items": [
       {
         "type": "password",
         "field": "wizard_admin_password",
         "label": "管理密码",
-        "desc": "保存后会替换当前管理密码，至少 8 位。",
+        "desc": "用于登录 DeepSeek Harness 访问入口，至少 8 位。",
         "rules": [
           {
             "required": true,
@@ -17,6 +17,30 @@
             "message": "管理密码至少需要 8 位"
           }
         ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "插件 npm 源",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_npm_registry",
+        "label": "地址",
+        "defaultValue": "https://registry.npmmirror.com",
+        "desc": "用于插件市场和第三方插件安装。留空时使用 npmmirror。"
+      }
+    ]
+  },
+  {
+    "stepTitle": "GitHub 加速",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_github_download_proxy",
+        "label": "URL 前缀",
+        "defaultValue": "https://gh-proxy.com/",
+        "desc": "用于插件依赖中的 GitHub 下载。填 URL 前缀，例如 https://gh-proxy.com/，会把 https://github.com/... 改写为 https://gh-proxy.com/https://github.com/...；留空使用默认值，填 disabled 表示直连。"
       }
     ]
   }

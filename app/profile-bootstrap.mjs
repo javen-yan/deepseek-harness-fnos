@@ -8,6 +8,9 @@ const runtimeDir = process.env.RUNTIME_DIR;
 const dshHome = process.env.DSH_HOME;
 const logFile = process.env.PROFILE_BOOTSTRAP_LOGFILE;
 const buildPolicy = process.env.DSH_PLUGIN_BUILD_POLICY || "allow-all";
+const npmRegistry = process.env.NPM_CONFIG_REGISTRY || process.env.npm_config_registry || "https://registry.npmmirror.com";
+const githubDownloadProxy = process.env.FNOS_GITHUB_DOWNLOAD_PROXY || process.env.GITHUB_DOWNLOAD_PROXY || "";
+const githubDownloadShim = process.env.FNOS_GITHUB_DOWNLOAD_SHIM || "";
 
 function log(message) {
   const line = `${new Date().toISOString()} ${message}\n`;
@@ -33,8 +36,18 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function ensureExecutableWrapper(file, nodeBin, targetBin) {
-  const content = `#!/bin/sh\nexec "${nodeBin}" "${targetBin}" "$@"\n`;
+function ensureExecutableWrapper(file, nodeBin, targetBin, options = {}) {
+  const shimBlock = options.githubDownloadShim
+    ? `if [ -n "\${FNOS_GITHUB_DOWNLOAD_PROXY:-}" ] && [ -f "${options.githubDownloadShim}" ]; then
+  if [ -n "\${NODE_OPTIONS:-}" ]; then
+    export NODE_OPTIONS="--require=${options.githubDownloadShim} $NODE_OPTIONS"
+  else
+    export NODE_OPTIONS="--require=${options.githubDownloadShim}"
+  fi
+fi
+`
+    : "";
+  const content = `#!/bin/sh\n${shimBlock}exec "${nodeBin}" "${targetBin}" "$@"\n`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== content) {
     fs.writeFileSync(file, content, { mode: 0o755 });
@@ -95,13 +108,14 @@ for (const [label, file] of [
 }
 
 if (binDir) {
-  ensureExecutableWrapper(path.join(binDir, "pnpm"), nodeBin, pnpmBin);
+  ensureExecutableWrapper(path.join(binDir, "pnpm"), nodeBin, pnpmBin, { githubDownloadShim });
   ensureExecutableWrapper(path.join(binDir, "dsh"), nodeBin, dshBin);
 }
 
 const appBootUrl = pathToFileURL(runtimeRequire.resolve("@deepseek-ai/dsh-app-boot")).href;
 const {
   PROFILE_TEMPLATES,
+  healProfilesModuleFallback,
   initProfile,
   readProfileManifest,
   resolveProfileDir,
@@ -109,6 +123,7 @@ const {
 } = await import(appBootUrl);
 
 const yaml = runtimeRequire("js-yaml");
+healProfilesModuleFallback(runtimePackage, dshHome);
 const profileDir = resolveProfileDir("web", dshHome);
 initProfile(profileDir, PROFILE_TEMPLATES.web);
 
@@ -146,6 +161,30 @@ const workspaceAfter = normalizeWorkspaceYaml(yaml, workspaceBefore);
 if (workspaceBefore !== workspaceAfter) {
   fs.writeFileSync(workspaceFile, workspaceAfter);
   log(`updated pnpm workspace settings ${workspaceFile}`);
+}
+
+const npmrcFile = path.join(profileDir, ".npmrc");
+const npmrcLines = [`registry=${npmRegistry}`];
+if (process.env.npm_config_proxy || process.env.HTTP_PROXY || process.env.http_proxy) {
+  npmrcLines.push(`proxy=${process.env.npm_config_proxy || process.env.HTTP_PROXY || process.env.http_proxy}`);
+}
+if (process.env.npm_config_https_proxy || process.env.HTTPS_PROXY || process.env.https_proxy) {
+  npmrcLines.push(`https-proxy=${process.env.npm_config_https_proxy || process.env.HTTPS_PROXY || process.env.https_proxy}`);
+}
+if (process.env.npm_config_noproxy || process.env.NO_PROXY || process.env.no_proxy) {
+  npmrcLines.push(`noproxy=${process.env.npm_config_noproxy || process.env.NO_PROXY || process.env.no_proxy}`);
+}
+npmrcLines.push("fetch-retries=3");
+npmrcLines.push("fetch-retry-mintimeout=10000");
+npmrcLines.push("fetch-retry-maxtimeout=60000");
+if (githubDownloadProxy) {
+  npmrcLines.push(`# GitHub downloads are accelerated by ${githubDownloadProxy} through the private pnpm wrapper.`);
+}
+const npmrcContent = `${npmrcLines.join("\n")}\n`;
+if (!fs.existsSync(npmrcFile) || fs.readFileSync(npmrcFile, "utf8") !== npmrcContent) {
+  fs.writeFileSync(npmrcFile, npmrcContent, { mode: 0o600 });
+  fs.chmodSync(npmrcFile, 0o600);
+  log(`updated profile npm registry ${npmRegistry}`);
 }
 
 log(`profile bootstrap completed for ${profileDir}`);

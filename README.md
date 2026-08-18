@@ -8,7 +8,7 @@ Local page source: [`site/index.html`](site/index.html)
 
 Maintainer and publisher: [javen-yan](https://javen-yan.github.io/)
 
-Current recommended version: `0.1.0-rc.6-17`.
+Current recommended version: `0.1.0-rc.7-7`.
 
 The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
@@ -18,6 +18,37 @@ Ordinary users should download only the matching Full FPK from GitHub Releases:
 - `deepseek_harness-<version>-arm.fpk` for ARM fnOS
 
 Runtime archives are uploaded as debug assets, but users do not need them.
+
+## Install Prerequisites
+
+Before installing the FPK, SSH into the fnOS NAS and prepare the plugin build
+environment:
+
+```sh
+sudo apt update && sudo apt install -y build-essential python3 make gcc g++ pkg-config
+```
+
+The core DSH runtime is already packaged in the FPK, so installation does not
+run `npm install` or compile the bundled app. These system tools are required
+later when users install DSH plugins that contain native Node.js addons.
+
+The app declares `nodejs_v24` as a fnOS dependency. App Center installs or
+enables that dependency, while the command above prepares the native build
+toolchain used by plugin installation.
+
+## Configuration Guide
+
+Recommended fnOS runtime settings:
+
+| Field | Recommended value | Notes |
+| --- | --- | --- |
+| Management password | Set your own password, at least 8 characters | Used to log in to the DeepSeek Harness access entry. Do not reuse your NAS account password. |
+| Plugin npm registry | `https://registry.npmmirror.com` | Used by the plugin market and third-party plugin installs. Empty uses the same default. |
+| GitHub accelerator | `https://gh-proxy.com/` | URL prefix for GitHub tarball downloads. `https://github.com/...` becomes `https://gh-proxy.com/https://github.com/...`. Use `disabled` for direct GitHub access. |
+
+Users in mainland China should normally keep the default npm registry and
+GitHub accelerator. Users with reliable direct GitHub access can set the
+accelerator to `disabled`.
 
 ## Runtime Model
 
@@ -42,10 +73,12 @@ TRIM_APPDEST/
       @deepseek-ai/dsh-web-frontend/dist/index.html
       @deepseek-ai/dsh-app-boot/lib/index.js
       pnpm/bin/pnpm.mjs
+      node-gyp/bin/node-gyp.js
+      prebuild-install/bin.js
   proxy.js
 ```
 
-The NAS never runs `npm install`, `npm ci`, or `npx`, so native modules are not compiled on the user device.
+The NAS never runs `npm install`, `npm ci`, or `npx` to build the core runtime. Third-party DSH plugins installed later use the bundled `pnpm`, but native builds rely on the NAS system environment prepared before installation.
 
 ## Build Runtime
 
@@ -71,7 +104,7 @@ dist/runtime/runtime-linux-arm64.tgz
 dist/runtime/runtime-linux-arm64.tgz.sha256
 ```
 
-The build fails if the runtime is missing DSH CLI, web frontend, app boot, packaged `pnpm`, or `node-pty`.
+The build fails if the runtime is missing DSH CLI, web frontend, app boot, packaged `pnpm`, `node-gyp`, `prebuild-install`, or `node-pty`.
 
 ## Build FPK
 
@@ -101,6 +134,7 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 ## Runtime Behavior
 
 - fnOS dependency: `nodejs_v24`
+- NAS build tools required for plugin native builds: `python3`, `make`, `gcc`, `g++`, and `pkg-config`
 - Harness bind: `127.0.0.1:3080`
 - Gateway entry: `http://<NAS_IP>:3081/`
 - fnOS App Center entry: one URL entry, port `3081`, path `/`
@@ -108,7 +142,7 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 - Main log: `TRIM_PKGVAR/logs/deepseek-harness.log`
 - Gateway log: `TRIM_PKGVAR/logs/gateway-proxy.log`
 - Gateway access log: `TRIM_PKGVAR/logs/gateway-access.log`
-- dshmarket log: `TRIM_PKGVAR/logs/dshmarket-install.log`
+- Profile bootstrap log: `TRIM_PKGVAR/logs/dsh-profile-bootstrap.log`
 
 `192.168.1.32:3080` will not open because Harness deliberately binds to loopback. External access goes through the bundled fnOS access package.
 
@@ -117,15 +151,39 @@ Gateway/access source is intentionally maintained separately. It lives in [`jave
 `build-runtime.sh` uses the sibling directory `../dsh-remote-gateway` when it exists, packing it into a temporary npm tarball before Docker builds the Linux runtime. If the sibling directory is absent, the build falls back to the Git dependency pinned by `app/package-lock.json`.
 
 The fnOS App Center entry is a single URL entry with port `3081` and path `/`.
-The install/config wizard only stores the management password. Extra user
-directories should be granted from the fnOS app settings "Access Permissions"
-page, the same model used by apps such as Gitea.
+The install/config wizard stores the management password, npm registry, and an
+optional GitHub download accelerator. Extra user directories should be granted
+from the fnOS app settings "Access Permissions" page, the same model used by
+apps such as Gitea.
 
-The app writes a private `pnpm` wrapper into `TRIM_PKGTMP/bin` before DSH starts
-and prepends that directory to `PATH`, so the plugin market never needs global
-`pnpm` or write access to the system Node directory. The web profile's
-`pnpm-workspace.yaml` is also merged with a small default `allowBuilds` set for
-common native plugin dependencies: `cloudflared`, `cpu-features`, and `ssh2`.
+The app writes a private `pnpm` wrapper into `TRIM_PKGTMP/bin` before DSH
+starts and prepends that directory to `PATH`, so the plugin market never needs
+global pnpm or write access to the system Node directory. Node and native build
+tools come from the NAS environment. The web profile's `pnpm-workspace.yaml` is
+scoped to the app profile and sets `dangerouslyAllowAllBuilds: true` for DSH
+plugin compatibility. The configured npm registry is written to the profile
+`.npmrc`; the default is `https://registry.npmmirror.com`.
+
+GitHub archive downloads are handled separately from npm registry downloads.
+The private pnpm wrapper loads `app/github-download-shim.cjs` and rewrites
+GitHub download hosts such as `github.com`, `codeload.github.com`, and
+`raw.githubusercontent.com` through `FNOS_GITHUB_DOWNLOAD_PROXY`. The default is
+`https://gh-proxy.com/`, so ordinary users do not need to configure a local
+proxy just to install plugins that reference GitHub tarballs. Leave the wizard
+field empty to keep the default accelerator, or set it to `disabled` to use
+direct GitHub downloads.
+
+For networks that require a real proxy, `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY` can still be provided through the app environment or gateway config.
+These values are exported in both upper and lower case and are also written to
+the profile `.npmrc`, so pnpm, npm, node-gyp, and prebuild installers can use
+the same proxy configuration.
+
+Before DSH starts, `app/profile-bootstrap.mjs` initializes the official web
+profile with the DSH app-boot helpers, mounts the bundled `dshmarket` bundle,
+and removes legacy fnOS gateway/profile plugin entries. The bundled plugin
+market is not installed with `dsh plugin add` during startup; user-installed
+market plugins use the bundled pnpm and registry configuration.
 
 Access is password based:
 
@@ -136,29 +194,22 @@ Access is password based:
 
 Verified on an x86 fnOS device:
 
-- App Center only shows `DeepSeek Harness 端口入口`.
+- App Center only shows `DeepSeek Harness`.
 - The app listens on `0.0.0.0:3081`; DSH itself stays on `127.0.0.1:3080`.
 - Authenticated HTML contains the Web Crypto compatibility shim before `window.__DSH_BOOT__`.
 
 Writable user data starts with fnOS data-share directories declared in `config/resource`:
 
-- `deepseek-harness/workspaces`
-- `deepseek-harness/profiles`
-- `deepseek-harness/exports`
+- `deepseek-harness/workspace` - the default agent working directory.
+- `deepseek-harness/extensions` - a user-visible place for extension packages,
+  import files, and plugin artifacts.
 
 Additional writable directories can be added from the fnOS app settings access
 permission page. Granted directories are passed by fnOS and validated on startup
-before DSH starts.
+before DSH starts. DSH profiles, credentials, config, and cache stay in the app's
+private var directory rather than being exposed as default data-share folders.
 
 Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
-
-After the main service starts, the app mounts the bundled plugin market into the web profile:
-
-```sh
-dsh plugin --profile web add link:$TRIM_APPDEST/runtime/node_modules/dshmarket
-```
-
-It uses the packaged runtime `pnpm`, logs clearly, and never downloads the market package during app startup.
 
 Regenerate the black PNG icons from the DeepSeek Harness favicon with:
 

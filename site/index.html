@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeepSeek Harness × fnOS：你的 NAS，从此有了自己的 Agent</title>
-  <meta name="description" content="javen-yan 维护的 DeepSeek Harness fnOS 原生全量封装：上传即装、持续在线、安全可控，让 AI 助手常驻你的 NAS。">
+  <title>DeepSeek Harness Full for fnOS：完整 DSH，运行在你的 NAS</title>
+  <meta name="description" content="javen-yan 维护的 DeepSeek Harness fnOS 完整版封装：不只是主体 Web UI，内置 DSH 运行时、插件市场、pnpm、node-gyp 和 GitHub 下载加速，尽量保留官方 DSH 的插件生态与 Agent 能力。">
   <meta name="author" content="javen-yan">
   <link rel="icon" href="favicon.svg">
   <style>
@@ -268,6 +268,136 @@
     }
     .feature p { margin: 0; color: var(--desc); font-size: 14px; line-height: 1.65; }
 
+    /* ---------- 架构图 ---------- */
+    .architecture { padding-top: 0; }
+    .arch-panel {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--r-card);
+      background:
+        radial-gradient(70% 90% at 54% 0%, rgba(103, 153, 254, .16), transparent 58%),
+        linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .01)),
+        var(--surface-3);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 28px 80px rgba(0, 0, 0, .3);
+    }
+    .arch-svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      min-height: 460px;
+      color: var(--text);
+    }
+    .arch-card {
+      fill: url(#arch-card-fill);
+      stroke: rgba(255, 255, 255, .15);
+      stroke-width: 1.15;
+      filter: url(#arch-card-shadow);
+    }
+    .arch-card.primary {
+      fill: url(#arch-primary-fill);
+      stroke: rgba(103, 153, 254, .38);
+    }
+    .arch-card.tool {
+      fill: url(#arch-tool-fill);
+      stroke: rgba(255, 255, 255, .16);
+    }
+    .arch-zone {
+      fill: url(#arch-zone-fill);
+      stroke: rgba(255, 255, 255, .11);
+      stroke-width: 1;
+      stroke-dasharray: 8 10;
+      filter: url(#arch-zone-shadow);
+    }
+    .arch-title { fill: var(--text); font: 600 19px/1 var(--font-sans); }
+    .arch-label { fill: var(--text); font: 600 14px/1 var(--font-sans); }
+    .arch-note { fill: #aeb6c5; font: 12.5px/1.4 var(--font-sans); }
+    .arch-mini {
+      fill: #7d8797;
+      font: 11px/1 var(--font-mono);
+      letter-spacing: .13em;
+    }
+    .arch-flow {
+      fill: none;
+      stroke: var(--brand-2);
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 12 12;
+      animation: flow 1.8s linear infinite;
+      filter: drop-shadow(0 0 8px rgba(77, 107, 254, .5));
+    }
+    .arch-flow.soft {
+      stroke: rgba(255, 255, 255, .5);
+      filter: none;
+      animation-duration: 2.4s;
+    }
+    .arch-dot {
+      fill: var(--brand);
+      filter: drop-shadow(0 0 10px rgba(77, 107, 254, .55));
+    }
+    .arch-chip {
+      fill: rgba(77, 107, 254, .14);
+      stroke: rgba(103, 153, 254, .36);
+      stroke-width: 1;
+    }
+    .arch-chip-text {
+      fill: #c1c8d7;
+      font: 12.5px/1.3 var(--font-sans);
+    }
+    .arch-number {
+      fill: #0a0a0a;
+      font: 700 10px/1 var(--font-mono);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .arch-icon {
+      fill: none;
+      stroke: rgba(255, 255, 255, .7);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    @keyframes flow {
+      to { stroke-dashoffset: -44; }
+    }
+
+    /* ---------- 配置指引 ---------- */
+    .config-guide {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .config-item {
+      min-width: 0;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-media);
+      background: var(--surface-3);
+    }
+    .config-item h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    .config-value {
+      display: block;
+      margin: 16px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-media);
+      background: var(--surface-1);
+      color: var(--text);
+      font: 13px/1.6 var(--font-mono);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .config-item p {
+      margin: 0;
+      color: var(--desc);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
     /* ---------- 步骤（官方快速体验卡风格） ---------- */
     .steps {
       display: grid;
@@ -378,7 +508,9 @@
       .hero-grid > div:first-child { text-align: center; }
       .hero-text { margin-left: auto; margin-right: auto; }
       .hero-grid .actions, .hero-grid .link-row { justify-content: center; }
-      .features, .steps { grid-template-columns: 1fr; }
+      .features, .steps, .config-guide { grid-template-columns: 1fr; }
+      .arch-panel { overflow-x: auto; }
+      .arch-svg { width: 940px; max-width: none; }
     }
     @media (max-width: 620px) {
       .wrap { width: min(100% - 32px, 1140px); }
@@ -412,6 +544,7 @@
       </a>
       <nav class="links" aria-label="页面导航">
         <a href="#features">特性</a>
+        <a href="#architecture">架构</a>
         <a href="#start">使用</a>
         <a href="#download">下载</a>
         <a class="gh-btn" href="https://github.com/javen-yan/deepseek-harness-fnos" target="_blank" rel="noopener noreferrer" aria-label="GitHub 仓库">
@@ -429,9 +562,9 @@
     <section class="hero">
       <div class="wrap hero-grid">
         <div>
-          <div class="pill rise rise-1"><span>DeepSeek Harness × fnOS</span></div>
-          <h1 class="rise rise-2">你的 NAS，从此有了<br>自己的 <span class="blue">Agent</span></h1>
-          <p class="hero-text rise rise-3">把 DeepSeek Harness 装进飞牛OS：上传即装，开机即用。一个常驻家中、随叫随到的 AI 助手。</p>
+          <div class="pill rise rise-1"><span>Full DSH for fnOS</span></div>
+          <h1 class="rise rise-2">完整 DSH，运行在<br>你的 <span class="blue">NAS</span></h1>
+          <p class="hero-text rise rise-3">面向飞牛OS重做的 DeepSeek Harness 完整版封装：不只提供主体 Web UI，也内置插件市场、pnpm、node-gyp 与下载加速，尽量保留官方 DSH 的插件生态和 Agent 能力。</p>
           <div class="actions rise rise-4">
             <a class="btn" href="#download">立即下载</a>
             <a class="btn secondary" href="#features">了解特性</a>
@@ -449,9 +582,10 @@
             <button type="button" class="copy" data-copy="cmd-hero">复制</button>
           </div>
           <div class="terminal-body">
-            <pre id="cmd-hero"><span class="p">$ </span>下载 FPK 安装包
+            <pre id="cmd-hero"><span class="p">$ </span>sudo apt update && sudo apt install -y build-essential python3 make gcc g++ pkg-config
+<span class="p">$ </span>下载 FPK 安装包
 <span class="p">$ </span>在 fnOS 应用中心上传安装
-<span class="p">$ </span>打开应用，配对即用</pre>
+<span class="p">$ </span>打开应用入口，登录即用</pre>
           </div>
         </div>
       </div>
@@ -462,29 +596,144 @@
       <div class="wrap">
         <div class="section-head reveal">
           <div class="pill"><span>WHY FNOS</span></div>
-          <h2>为 NAS 而生的 Agent</h2>
-          <p>模型是 Agent 的灵魂，Harness 赋予它理解环境、使用工具、持续执行的能力。现在，它装进了你的 NAS。</p>
+          <h2>不止能打开，更要能扩展</h2>
+          <p>很多 NAS 封装只解决“把主体页面跑起来”。这个版本把重点放在完整 DSH 体验：插件市场、插件安装、native build、工作区权限和安全访问入口一起闭环。</p>
         </div>
 
         <div class="features">
           <article class="feature reveal" style="transition-delay:0ms">
             <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><path d="M36 12L58 24V48L36 60L14 48V24L36 12Z" stroke="currentColor" stroke-width="1.2"/><path d="M14.5 24L36 36L57.5 24M36 36V59.5" stroke="currentColor" stroke-width="1.2"/></svg></span>
-            <h3>上传即装</h3>
-            <p class="label">UPLOAD &amp; GO</p>
-            <p>在应用中心上传安装包，一分钟完成部署。无需 Docker、无需命令行，装完就能用。</p>
+            <h3>完整运行时</h3>
+            <p class="label">FULL RUNTIME</p>
+            <p>内置 DSH Web、CLI、插件市场、pnpm、node-gyp 和 native 依赖入口，减少只封主体导致插件不可用的问题。</p>
           </article>
           <article class="feature reveal" style="transition-delay:80ms">
             <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><circle cx="36" cy="36" r="4" stroke="currentColor" stroke-width="1.2"/><circle cx="36" cy="36" r="1.5" fill="currentColor"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(90 36 36)"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(30 36 36)"/><ellipse cx="36" cy="36" rx="25" ry="11" stroke="currentColor" stroke-width="1" opacity="0.7" transform="rotate(150 36 36)"/></svg></span>
-            <h3>持续在线</h3>
-            <p class="label">ALWAYS ON</p>
-            <p>NAS 7×24 常驻，任务不因关机而中断。长任务挂到后台慢慢跑，走到哪都能接入。</p>
+            <h3>插件生态</h3>
+            <p class="label">PLUGIN READY</p>
+            <p>默认使用国内 npm 镜像和 GitHub 下载加速；插件构建走应用私有 pnpm，支持需要 native addon 的插件安装场景。</p>
           </article>
           <article class="feature reveal" style="transition-delay:160ms">
             <span class="icon" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 72 72" fill="none"><rect x="17" y="32" width="38" height="26" rx="4" stroke="currentColor" stroke-width="1.2"/><path d="M24 32V24C24 17.4 29.4 12 36 12C42.6 12 48 17.4 48 24V32" stroke="currentColor" stroke-width="1.2"/><circle cx="36" cy="45" r="2.5" fill="currentColor"/><path d="M36 47.5V53" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
             <h3>安全可控</h3>
             <p class="label">PRIVATE &amp; SAFE</p>
-            <p>服务仅在本机运行，六位配对码认证访问，数据与工作文件都留在自己的设备上。</p>
+            <p>DSH 主服务只监听本机地址，外部通过认证入口访问；工作区和扩展目录遵循 fnOS 授权边界。</p>
           </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 架构 -->
+    <section id="architecture" class="architecture">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="pill"><span>ARCHITECTURE</span></div>
+          <h2>完整 DSH 的运行流转</h2>
+          <p>访问层、DSH 主服务、扩展生态和授权目录分层运行。外部只进入认证入口，扩展能力留在应用私有边界内，DSH 本体保持本机监听。</p>
+        </div>
+
+        <div class="arch-panel reveal">
+          <svg class="arch-svg" viewBox="0 0 1120 520" role="img" aria-labelledby="arch-title arch-desc">
+            <title id="arch-title">DeepSeek Harness fnOS 完整运行架构</title>
+            <desc id="arch-desc">图中展示用户访问、认证入口、DSH 主服务、扩展生态、扩展运行支持和 fnOS 授权目录之间的流转关系。</desc>
+            <defs>
+              <linearGradient id="arch-zone-fill" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ffffff" stop-opacity=".055"></stop>
+                <stop offset=".52" stop-color="#ffffff" stop-opacity=".018"></stop>
+                <stop offset="1" stop-color="#6799fe" stop-opacity=".035"></stop>
+              </linearGradient>
+              <linearGradient id="arch-card-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffffff" stop-opacity=".08"></stop>
+                <stop offset="1" stop-color="#ffffff" stop-opacity=".035"></stop>
+              </linearGradient>
+              <linearGradient id="arch-primary-fill" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#6799fe" stop-opacity=".18"></stop>
+                <stop offset=".58" stop-color="#ffffff" stop-opacity=".055"></stop>
+                <stop offset="1" stop-color="#4d6bfe" stop-opacity=".08"></stop>
+              </linearGradient>
+              <linearGradient id="arch-tool-fill" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ffffff" stop-opacity=".075"></stop>
+                <stop offset="1" stop-color="#6799fe" stop-opacity=".055"></stop>
+              </linearGradient>
+              <filter id="arch-card-shadow" x="-15%" y="-18%" width="130%" height="140%">
+                <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity=".28"></feDropShadow>
+              </filter>
+              <filter id="arch-zone-shadow" x="-6%" y="-8%" width="112%" height="116%">
+                <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#000000" flood-opacity=".22"></feDropShadow>
+              </filter>
+              <marker id="arrow-brand" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 1 1 L 11 6 L 1 11 z" fill="#6799fe"></path>
+              </marker>
+              <marker id="arrow-soft" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 1 1 L 11 6 L 1 11 z" fill="#ffffff" opacity=".56"></path>
+              </marker>
+            </defs>
+
+            <rect class="arch-zone" x="300" y="58" width="760" height="392" rx="28"></rect>
+            <line x1="300" y1="284" x2="1060" y2="284" stroke="#ffffff" stroke-opacity=".06" stroke-dasharray="4 10"></line>
+            <text class="arch-mini" x="336" y="94">FNOS APP SANDBOX</text>
+            <text class="arch-note" x="336" y="120">应用私有运行时、配置、缓存和授权目录边界</text>
+
+            <rect class="arch-card" x="62" y="172" width="180" height="92" rx="14"></rect>
+            <path class="arch-icon" d="M94 198h24a6 6 0 0 1 6 6v18H88v-18a6 6 0 0 1 6-6zM92 226h28"></path>
+            <text class="arch-label" x="138" y="207">浏览器用户</text>
+            <text class="arch-note" x="138" y="232">局域网或远程入口</text>
+
+            <rect class="arch-card primary" x="338" y="150" width="196" height="130" rx="16"></rect>
+            <circle cx="370" cy="184" r="13" fill="#6799fe" fill-opacity=".18" stroke="#6799fe" stroke-opacity=".45"></circle>
+            <text class="arch-number" x="370" y="184">1</text>
+            <text class="arch-mini" x="394" y="187">ACCESS LAYER</text>
+            <text class="arch-title" x="370" y="222">认证入口</text>
+            <text class="arch-note" x="370" y="250">管理密码</text>
+            <text class="arch-note" x="370" y="270">WebSocket / SSE 转发</text>
+
+            <rect class="arch-card primary" x="620" y="134" width="214" height="154" rx="16"></rect>
+            <circle cx="654" cy="170" r="13" fill="#6799fe" fill-opacity=".2" stroke="#6799fe" stroke-opacity=".48"></circle>
+            <text class="arch-number" x="654" y="170">2</text>
+            <text class="arch-mini" x="678" y="173">LOCAL SERVICE</text>
+            <text class="arch-title" x="654" y="210">DSH Web</text>
+            <text class="arch-note" x="654" y="238">官方 Harness UI</text>
+            <text class="arch-note" x="654" y="258">仅监听本机地址</text>
+
+            <rect class="arch-card" x="890" y="150" width="170" height="130" rx="16"></rect>
+            <text class="arch-mini" x="924" y="188">PROFILE</text>
+            <text class="arch-title" x="924" y="224">Web Profile</text>
+            <text class="arch-note" x="924" y="252">设置 / 凭据 / 会话</text>
+
+            <rect class="arch-card tool" x="338" y="336" width="196" height="92" rx="16"></rect>
+            <text class="arch-mini" x="370" y="372">EXTENSIONS</text>
+            <text class="arch-title" x="370" y="404">扩展生态</text>
+
+            <rect class="arch-card tool" x="620" y="320" width="214" height="126" rx="16"></rect>
+            <circle cx="654" cy="356" r="13" fill="#ffffff" fill-opacity=".11" stroke="#ffffff" stroke-opacity=".26"></circle>
+            <text class="arch-number" x="654" y="356">3</text>
+            <text class="arch-mini" x="678" y="359">PRIVATE RUNTIME</text>
+            <text class="arch-title" x="654" y="396">扩展运行支持</text>
+            <text class="arch-note" x="654" y="424">下载、安装与构建加速</text>
+
+            <rect class="arch-card" x="890" y="336" width="170" height="92" rx="16"></rect>
+            <text class="arch-mini" x="924" y="372">FNOS ACL</text>
+            <text class="arch-title" x="924" y="404">授权目录</text>
+
+            <path class="arch-flow" marker-end="url(#arrow-brand)" d="M 242 218 C 286 218 296 215 338 215"></path>
+            <path class="arch-flow" marker-end="url(#arrow-brand)" d="M 534 215 C 570 215 584 211 620 211"></path>
+            <path class="arch-flow" marker-end="url(#arrow-brand)" d="M 834 211 C 860 211 866 215 890 215"></path>
+
+            <path class="arch-flow soft" marker-end="url(#arrow-soft)" d="M 727 288 C 727 306 727 306 727 320"></path>
+            <path class="arch-flow soft" marker-end="url(#arrow-soft)" d="M 534 382 C 570 382 584 383 620 383"></path>
+            <path class="arch-flow soft" marker-end="url(#arrow-soft)" d="M 834 383 C 862 383 866 382 890 382"></path>
+
+            <circle class="arch-dot" cx="286" cy="218" r="4.5"></circle>
+            <circle class="arch-dot" cx="578" cy="213" r="4.5"></circle>
+            <circle class="arch-dot" cx="866" cy="213" r="4.5"></circle>
+
+            <rect class="arch-chip" x="62" y="346" width="214" height="42" rx="21"></rect>
+            <circle cx="88" cy="367" r="4" fill="#6799fe"></circle>
+            <text class="arch-chip-text" x="102" y="371">主体 UI + 插件生态一起闭环</text>
+            <rect class="arch-chip" x="62" y="402" width="214" height="42" rx="21"></rect>
+            <circle cx="88" cy="423" r="4" fill="#ffffff" fill-opacity=".64"></circle>
+            <text class="arch-chip-text" x="102" y="427">不直接暴露 DSH 本体服务</text>
+          </svg>
         </div>
       </div>
     </section>
@@ -494,37 +743,66 @@
       <div class="wrap">
         <div class="section-head reveal">
           <div class="pill"><span>开始使用</span></div>
-          <h2>三步，把 Agent 带回家</h2>
-          <p>从下载到配对，全程无需命令行。适配 fnOS 1.2 及以上版本。</p>
+          <h2>三步，启用完整 DSH</h2>
+          <p>先准备插件构建环境，再上传 FPK。后续插件下载默认走国内 npm 镜像和 GitHub 下载加速；加速项填写 URL 前缀即可，留空使用默认值。适配 fnOS 1.2 及以上版本。</p>
         </div>
 
         <div class="steps">
           <article class="step reveal" style="transition-delay:0ms">
-            <h3>下载安装包</h3>
-            <p>按设备架构选择 x86 或 ARM 版本，下载到本地。</p>
+            <h3>准备构建环境</h3>
+            <p>完整插件生态需要 native build 能力，安装前先在 NAS 准备系统构建工具。</p>
             <div class="code-row">
-              <code><span class="p">$ </span>下载 deepseek_harness-&lt;version&gt;-x86.fpk</code>
+              <code><span class="p">$ </span>sudo apt update && sudo apt install -y build-essential python3 make gcc g++ pkg-config</code>
               <button type="button" class="copy" data-copy="cmd-1">复制</button>
             </div>
-            <pre id="cmd-1" hidden>下载 deepseek_harness-&lt;version&gt;-x86.fpk</pre>
+            <pre id="cmd-1" hidden>sudo apt update && sudo apt install -y build-essential python3 make gcc g++ pkg-config</pre>
           </article>
           <article class="step reveal" style="transition-delay:80ms">
-            <h3>上传到 fnOS</h3>
-            <p>在应用中心上传安装包，等待安装完成即可。</p>
+            <h3>下载并上传</h3>
+            <p>按设备架构选择 x86 或 ARM 版本，在应用中心上传安装包。</p>
             <div class="code-row">
-              <code><span class="p">$ </span>在 fnOS 应用中心上传安装</code>
+              <code><span class="p">$ </span>下载 deepseek_harness-&lt;version&gt;-x86.fpk</code>
               <button type="button" class="copy" data-copy="cmd-2">复制</button>
             </div>
-            <pre id="cmd-2" hidden>在 fnOS 应用中心上传安装</pre>
+            <pre id="cmd-2" hidden>下载 deepseek_harness-&lt;version&gt;-x86.fpk</pre>
           </article>
           <article class="step reveal" style="transition-delay:160ms">
-            <h3>配对即用</h3>
-            <p>打开应用入口，输入配对码，进入你的专属工作台。</p>
+            <h3>登录即用</h3>
+            <p>打开应用入口，输入管理密码，进入官方 DeepSeek Harness Web UI。</p>
             <div class="code-row">
-              <code><span class="p">$ </span>打开应用，配对即用</code>
+              <code><span class="p">$ </span>打开应用入口，登录即用</code>
               <button type="button" class="copy" data-copy="cmd-3">复制</button>
             </div>
-            <pre id="cmd-3" hidden>打开应用，配对即用</pre>
+            <pre id="cmd-3" hidden>打开应用入口，登录即用</pre>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 配置 -->
+    <section id="config">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="pill"><span>CONFIG</span></div>
+          <h2>运行配置怎么填</h2>
+          <p>首次安装只需要设置管理密码。网络相关配置已经给了适合国内环境的默认值，普通用户按下面推荐填写即可。</p>
+        </div>
+
+        <div class="config-guide">
+          <article class="config-item reveal" style="transition-delay:0ms">
+            <h3>管理密码</h3>
+            <code class="config-value">至少 8 位，自行设置</code>
+            <p>用于登录 DeepSeek Harness 访问入口。不要使用 NAS 登录密码，建议单独设置一个强密码。</p>
+          </article>
+          <article class="config-item reveal" style="transition-delay:80ms">
+            <h3>插件 npm 源</h3>
+            <code class="config-value">https://registry.npmmirror.com</code>
+            <p>用于插件市场和第三方插件安装。留空也会使用这个默认源；海外网络可以改为 npm 官方源。</p>
+          </article>
+          <article class="config-item reveal" style="transition-delay:160ms">
+            <h3>GitHub 加速</h3>
+            <code class="config-value">https://gh-proxy.com/</code>
+            <p>这是 URL 前缀，会把 GitHub 下载地址拼到后面。留空使用默认加速源；填 disabled 表示直连 GitHub。</p>
           </article>
         </div>
       </div>
@@ -535,8 +813,8 @@
       <div class="wrap">
         <div class="download-panel reveal">
           <div class="pill"><span>DOWNLOAD</span></div>
-          <h2>立即下载 DeepSeek Harness fnOS 版</h2>
-          <p>开源 · 免费 · MIT 协议。x86 与 ARM 架构均提供完整安装包，GitHub Releases 持续更新。</p>
+          <h2>下载 DeepSeek Harness Full for fnOS</h2>
+          <p>这是面向完整 DSH 体验的 fnOS 原生封装，而不是只提供主体页面的轻量壳。x86 与 ARM 架构均提供完整安装包；安装前请先准备插件构建环境。</p>
           <div class="actions">
             <a class="btn" href="https://github.com/javen-yan/deepseek-harness-fnos/releases" target="_blank" rel="noopener noreferrer">下载 x86 FPK</a>
             <a class="btn secondary" href="https://github.com/javen-yan/deepseek-harness-fnos/releases" target="_blank" rel="noopener noreferrer">下载 ARM FPK</a>

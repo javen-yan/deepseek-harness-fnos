@@ -20,14 +20,20 @@ GATEWAY_INSTALL_LOGFILE="$LOG_DIR/gateway-install.log"
 MARKET_LOGFILE="$LOG_DIR/dshmarket-install.log"
 PROFILE_BOOTSTRAP_LOGFILE="$LOG_DIR/dsh-profile-bootstrap.log"
 BIN_DIR="$TMP_DIR/bin"
+NODE_BIN="${NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+NPM_BIN="${NPM_BIN:-$(command -v npm 2>/dev/null || true)}"
+NPX_BIN="${NPX_BIN:-$(command -v npx 2>/dev/null || true)}"
+COREPACK_BIN="${COREPACK_BIN:-$(command -v corepack 2>/dev/null || true)}"
 GATEWAY_PORT="${GATEWAY_PORT:-3081}"
 GATEWAY_HOST="${GATEWAY_HOST:-0.0.0.0}"
 GATEWAY_SESSION_DAYS="${GATEWAY_SESSION_DAYS:-30}"
 ADMIN_PASSWORD_FILE="$DATA_DIR/gateway/admin-password.json"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
+NODE_GYP_BIN="$RUNTIME_DIR/node_modules/node-gyp/bin/node-gyp.js"
 ACCESS_PLUGIN_DIR="$RUNTIME_DIR/node_modules/@fnos/dsh-fnos-access"
 PROFILE_BOOTSTRAP="$APP_DIR/profile-bootstrap.mjs"
+GITHUB_DOWNLOAD_SHIM="$APP_DIR/github-download-shim.cjs"
 
 write_error() {
   local message="$1"
@@ -57,9 +63,8 @@ load_gateway_config() {
 }
 
 configure_data_shares() {
-  WORKSPACE_DIR="$DATA_DIR/workspaces"
+  WORKSPACE_DIR="$DATA_DIR/workspace"
   PROFILE_DIR="$DATA_DIR/profiles"
-  EXPORT_DIR="$DATA_DIR/exports"
   WRITABLE_DIRS=""
 
   old_ifs="$IFS"
@@ -67,8 +72,6 @@ configure_data_shares() {
   set -- ${TRIM_DATA_SHARE_PATHS:-}
   IFS="$old_ifs"
   if [ -n "${1:-}" ]; then WORKSPACE_DIR="$1"; fi
-  if [ -n "${2:-}" ]; then PROFILE_DIR="$2"; fi
-  if [ -n "${3:-}" ]; then EXPORT_DIR="$3"; fi
 
   add_writable_dir() {
     local dir="$1"
@@ -80,8 +83,13 @@ configure_data_shares() {
   }
 
   add_writable_dir "$WORKSPACE_DIR"
-  add_writable_dir "$PROFILE_DIR"
-  add_writable_dir "$EXPORT_DIR"
+
+  old_ifs="$IFS"
+  IFS=':'
+  for dir in ${TRIM_DATA_SHARE_PATHS:-}; do
+    add_writable_dir "$dir"
+  done
+  IFS="$old_ifs"
 
   old_ifs="$IFS"
   IFS=':'
@@ -105,6 +113,90 @@ configure_data_shares() {
   IFS="$old_ifs"
 
   mkdir -p "$PROFILE_DIR/home" "$PROFILE_DIR/dsh" "$PROFILE_DIR/config" "$PROFILE_DIR/data" "$TMP_DIR/cache"
+}
+
+write_wrapper() {
+  local name="$1"
+  local target="$2"
+  mkdir -p "$BIN_DIR"
+  {
+    echo "#!/bin/sh"
+    echo "exec \"$target\" \"\$@\""
+  } > "$BIN_DIR/$name"
+  chmod 755 "$BIN_DIR/$name"
+}
+
+write_node_script_wrapper() {
+  local name="$1"
+  local script="$2"
+  mkdir -p "$BIN_DIR"
+  {
+    echo "#!/bin/sh"
+    echo "exec \"$NODE_BIN\" \"$script\" \"\$@\""
+  } > "$BIN_DIR/$name"
+  chmod 755 "$BIN_DIR/$name"
+}
+
+write_pnpm_wrapper() {
+  mkdir -p "$BIN_DIR"
+  {
+    echo "#!/bin/sh"
+    echo "if [ -n \"\${FNOS_GITHUB_DOWNLOAD_PROXY:-}\" ] && [ -f \"$GITHUB_DOWNLOAD_SHIM\" ]; then"
+    echo "  if [ -n \"\${NODE_OPTIONS:-}\" ]; then"
+    echo "    export NODE_OPTIONS=\"--require=$GITHUB_DOWNLOAD_SHIM \$NODE_OPTIONS\""
+    echo "  else"
+    echo "    export NODE_OPTIONS=\"--require=$GITHUB_DOWNLOAD_SHIM\""
+    echo "  fi"
+    echo "fi"
+    echo "exec \"$NODE_BIN\" \"$PNPM_BIN\" \"\$@\""
+  } > "$BIN_DIR/pnpm"
+  chmod 755 "$BIN_DIR/pnpm"
+}
+
+enable_github_download_shim() {
+  [ -n "${FNOS_GITHUB_DOWNLOAD_PROXY:-}" ] || return 0
+  [ -f "$GITHUB_DOWNLOAD_SHIM" ] || return 0
+  case " ${NODE_OPTIONS:-} " in
+    *" --require=$GITHUB_DOWNLOAD_SHIM "*) ;;
+    *)
+      if [ -n "${NODE_OPTIONS:-}" ]; then
+        export NODE_OPTIONS="--require=$GITHUB_DOWNLOAD_SHIM $NODE_OPTIONS"
+      else
+        export NODE_OPTIONS="--require=$GITHUB_DOWNLOAD_SHIM"
+      fi
+      ;;
+  esac
+}
+
+setup_toolchain_env() {
+  mkdir -p "$BIN_DIR" "$TMP_DIR/npm-cache" "$TMP_DIR/pnpm-home" "$TMP_DIR/pnpm-store" "$TMP_DIR/corepack-home"
+
+  write_wrapper node "$NODE_BIN"
+  [ -n "$NPM_BIN" ] && write_wrapper npm "$NPM_BIN"
+  [ -n "$NPX_BIN" ] && write_wrapper npx "$NPX_BIN"
+  [ -n "$COREPACK_BIN" ] && write_wrapper corepack "$COREPACK_BIN"
+  write_pnpm_wrapper
+
+  export PATH="$BIN_DIR:$PATH"
+  export NODE_BIN="$NODE_BIN"
+  export npm_config_python="${npm_config_python:-$(command -v python3)}"
+  export PYTHON="$npm_config_python"
+  export npm_config_node_gyp="$NODE_GYP_BIN"
+  export npm_config_cache="$TMP_DIR/npm-cache"
+  export npm_config_registry="${NPM_CONFIG_REGISTRY:-${npm_config_registry:-https://registry.npmmirror.com}}"
+  export NPM_CONFIG_REGISTRY="$npm_config_registry"
+  export FNOS_GITHUB_DOWNLOAD_PROXY="${FNOS_GITHUB_DOWNLOAD_PROXY:-${GITHUB_DOWNLOAD_PROXY:-https://gh-proxy.com/}}"
+  export GITHUB_DOWNLOAD_PROXY="$FNOS_GITHUB_DOWNLOAD_PROXY"
+  export FNOS_GITHUB_DOWNLOAD_SHIM="$GITHUB_DOWNLOAD_SHIM"
+  enable_github_download_shim
+  export PNPM_HOME="$TMP_DIR/pnpm-home"
+  export PNPM_STORE_DIR="$TMP_DIR/pnpm-store"
+  export COREPACK_HOME="$TMP_DIR/corepack-home"
+
+  node_include_dir="$(dirname "$(dirname "$NODE_BIN")")/include/node"
+  if [ -f "$node_include_dir/node.h" ]; then
+    export npm_config_nodedir="$(dirname "$node_include_dir")"
+  fi
 }
 
 fix_sensitive_profile_permissions() {
@@ -139,11 +231,19 @@ is_running() {
 }
 
 require_dependencies() {
+  [ -n "$NODE_BIN" ] || {
+    write_error "Node.js is unavailable. Install or enable the fnOS nodejs_v24 dependency."
+    exit 1
+  }
+  "$NODE_BIN" -e "const [major] = process.versions.node.split('.').map(Number); if (major < 24) process.exit(1)" >/dev/null 2>&1 || {
+    write_error "DeepSeek Harness requires Node.js 24+. Install or enable fnOS nodejs_v24."
+    exit 1
+  }
   if [ ! -x "$DSH_BIN" ]; then
     write_error "DeepSeek Harness runtime is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
-  node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >/dev/null 2>&1 || {
+  "$NODE_BIN" -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >/dev/null 2>&1 || {
     write_error "DeepSeek Harness runtime cannot load node-pty. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   }
@@ -159,6 +259,12 @@ require_dependencies() {
     write_error "DeepSeek Harness runtime is missing dshmarket. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
+  for tool in python3 make gcc g++ pkg-config; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      write_error "DeepSeek Harness plugin builds require system tool '$tool'. Prepare the NAS build environment before starting the app."
+      exit 1
+    fi
+  done
 }
 
 build_trusted_host_args() {
@@ -177,20 +283,15 @@ bootstrap_profile() {
     exit 1
   fi
 
+  setup_toolchain_env
   export DSH_TOOL_BIN_DIR="$BIN_DIR"
-  export NODE_BIN="/var/apps/nodejs_v24/target/bin/node"
   export PROFILE_BOOTSTRAP_LOGFILE="$PROFILE_BOOTSTRAP_LOGFILE"
   export RUNTIME_DIR="$RUNTIME_DIR"
   export DSH_PLUGIN_BUILD_POLICY="${DSH_PLUGIN_BUILD_POLICY:-allow-all}"
-  if ! node "$PROFILE_BOOTSTRAP" >> "$PROFILE_BOOTSTRAP_LOGFILE" 2>&1; then
+  if ! "$NODE_BIN" "$PROFILE_BOOTSTRAP" >> "$PROFILE_BOOTSTRAP_LOGFILE" 2>&1; then
     write_error "DeepSeek Harness profile bootstrap failed. Check $PROFILE_BOOTSTRAP_LOGFILE for details."
     exit 1
   fi
-
-  case ":$PATH:" in
-    *":$BIN_DIR:"*) ;;
-    *) export PATH="$BIN_DIR:$PATH" ;;
-  esac
 }
 
 start_app() {
@@ -218,15 +319,11 @@ start_app() {
   bootstrap_profile
 
   if ! is_dsh_running; then
-    set -- "$DSH_BIN" web --host "$HOST" --port "$PORT"
     build_trusted_host_args
-    if [ -n "$TRUSTED_HOST_ARGS" ]; then
-      set -- "$@" $TRUSTED_HOST_ARGS
-    fi
 
     current_dir="$(pwd)"
     cd "$WORKSPACE_DIR"
-    nohup "$@" >> "$LOGFILE" 2>&1 &
+    nohup "$NODE_BIN" "$DSH_BIN" web --host "$HOST" --port "$PORT" $TRUSTED_HOST_ARGS >> "$LOGFILE" 2>&1 &
     echo "$!" > "$PIDFILE"
     cd "$current_dir"
     sleep 2
@@ -252,7 +349,7 @@ start_app() {
     MARKET_LOGFILE="$MARKET_LOGFILE" \
     UPSTREAM_HOST="$HOST" \
     UPSTREAM_PORT="$PORT" \
-    nohup node "$APP_DIR/proxy.js" >> "$PROXY_LOGFILE" 2>&1 &
+    nohup "$NODE_BIN" "$APP_DIR/proxy.js" >> "$PROXY_LOGFILE" 2>&1 &
     echo "$!" > "$PROXY_PIDFILE"
 
     for _ in 1 2 3 4 5; do

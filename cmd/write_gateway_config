@@ -9,6 +9,7 @@ CONFIG_DIR="$DATA_DIR/gateway"
 CONFIG_FILE="$CONFIG_DIR/gateway.conf"
 PASSWORD_FILE="$CONFIG_DIR/admin-password.json"
 ADMIN_AUTH_JS="$APP_DIR/runtime/node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs"
+NODE_BIN="${NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 
 write_error() {
   local message="$1"
@@ -31,12 +32,18 @@ shell_quote() {
 mkdir -p "$CONFIG_DIR"
 
 admin_password="${wizard_admin_password:-${ADMIN_PASSWORD:-}}"
+npm_registry="${wizard_npm_registry:-${NPM_CONFIG_REGISTRY:-${npm_config_registry:-https://registry.npmmirror.com}}}"
+github_download_proxy="${wizard_github_download_proxy:-${FNOS_GITHUB_DOWNLOAD_PROXY:-${GITHUB_DOWNLOAD_PROXY:-https://gh-proxy.com/}}}"
+http_proxy_value="${wizard_http_proxy:-${HTTP_PROXY:-${http_proxy:-}}}"
+https_proxy_value="${wizard_https_proxy:-${HTTPS_PROXY:-${https_proxy:-}}}"
+no_proxy_value="${wizard_no_proxy:-${NO_PROXY:-${no_proxy:-127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}}}"
 if [ -n "$admin_password" ]; then
   if [ "${#admin_password}" -lt 8 ]; then
     fail "Admin password must be at least 8 characters."
   fi
   [ -f "$ADMIN_AUTH_JS" ] || fail "Gateway admin auth module is missing."
-  node - "$ADMIN_AUTH_JS" "$PASSWORD_FILE" "$admin_password" <<'NODE'
+  [ -n "$NODE_BIN" ] || fail "Node.js is unavailable. Install or enable the fnOS nodejs_v24 dependency."
+  "$NODE_BIN" - "$ADMIN_AUTH_JS" "$PASSWORD_FILE" "$admin_password" <<'NODE'
 const modulePath = process.argv[2];
 const file = process.argv[3];
 const password = process.argv[4];
@@ -47,9 +54,46 @@ elif [ ! -f "$PASSWORD_FILE" ]; then
   fail "Admin password is required. Please set it in the fnOS app configuration."
 fi
 
+case "$npm_registry" in
+  http://*|https://*) ;;
+  "") npm_registry="https://registry.npmmirror.com" ;;
+  *) fail "npm registry must start with http:// or https://." ;;
+esac
+for proxy_value in "$http_proxy_value" "$https_proxy_value"; do
+  case "$proxy_value" in
+    ""|http://*|https://*|socks://*|socks5://*) ;;
+    *) fail "Proxy URL must start with http://, https://, socks://, or socks5://." ;;
+  esac
+done
+case "$github_download_proxy" in
+  ""|direct|disabled|off|http://*|https://*) ;;
+  *) fail "GitHub download accelerator must be empty, direct, disabled, off, or start with http:// or https://." ;;
+esac
+
 {
   echo "# Written by fnOS config_callback. Do not edit while the app is running."
   echo "GATEWAY_SESSION_DAYS='30'"
+  echo "NPM_CONFIG_REGISTRY=$(shell_quote "$npm_registry")"
+  echo "npm_config_registry=$(shell_quote "$npm_registry")"
+  if [ -n "$github_download_proxy" ]; then
+    echo "FNOS_GITHUB_DOWNLOAD_PROXY=$(shell_quote "$github_download_proxy")"
+    echo "GITHUB_DOWNLOAD_PROXY=$(shell_quote "$github_download_proxy")"
+  fi
+  if [ -n "$http_proxy_value" ]; then
+    echo "HTTP_PROXY=$(shell_quote "$http_proxy_value")"
+    echo "http_proxy=$(shell_quote "$http_proxy_value")"
+    echo "npm_config_proxy=$(shell_quote "$http_proxy_value")"
+  fi
+  if [ -n "$https_proxy_value" ]; then
+    echo "HTTPS_PROXY=$(shell_quote "$https_proxy_value")"
+    echo "https_proxy=$(shell_quote "$https_proxy_value")"
+    echo "npm_config_https_proxy=$(shell_quote "$https_proxy_value")"
+  fi
+  if [ -n "$no_proxy_value" ]; then
+    echo "NO_PROXY=$(shell_quote "$no_proxy_value")"
+    echo "no_proxy=$(shell_quote "$no_proxy_value")"
+    echo "npm_config_noproxy=$(shell_quote "$no_proxy_value")"
+  fi
 } > "$CONFIG_FILE"
 
 chmod 600 "$CONFIG_FILE" >/dev/null 2>&1 || true
