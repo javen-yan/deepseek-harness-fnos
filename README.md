@@ -36,7 +36,9 @@ TRIM_APPDEST/
         package.json
         lib/edge-proxy.cjs
         lib/admin-auth.cjs
-      node-pty/build/Release/pty.node
+      dshmarket/
+        cordis.patch.yml
+      node-pty native module
       @deepseek-ai/dsh-web-frontend/dist/index.html
       @deepseek-ai/dsh-app-boot/lib/index.js
       pnpm/bin/pnpm.mjs
@@ -98,7 +100,7 @@ Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deeps
 
 ## Runtime Behavior
 
-- fnOS dependency: `nodejs_v22`
+- fnOS dependency: `nodejs_v24`
 - Harness bind: `127.0.0.1:3080`
 - Gateway entry: `http://<NAS_IP>:3081/`
 - fnOS App Center entry: one URL entry, port `3081`, path `/`
@@ -119,18 +121,24 @@ The install/config wizard only stores the management password. Extra user
 directories should be granted from the fnOS app settings "Access Permissions"
 page, the same model used by apps such as Gitea.
 
+The app writes a private `pnpm` wrapper into `TRIM_PKGTMP/bin` before DSH starts
+and prepends that directory to `PATH`, so the plugin market never needs global
+`pnpm` or write access to the system Node directory. The web profile's
+`pnpm-workspace.yaml` is also merged with a small default `allowBuilds` set for
+common native plugin dependencies: `cloudflared`, `cpu-features`, and `ssh2`.
+
 Access is password based:
 
 - `/fnos-access/login` requires the management password configured in the fnOS wizard.
 - Login sets one HttpOnly `fnos_dsh_access` cookie and returns directly to the official DSH Web UI.
 - The edge proxy gates browser access and then forwards HTTP/WebSocket traffic unchanged to `127.0.0.1:3080` with loopback `Host` and `Origin`.
-- The edge proxy injects only a small `crypto.randomUUID` polyfill into HTML for LAN HTTP browsers. The polyfill is inserted immediately after `<head>` so it runs before the DSH boot script.
+- The edge proxy injects only a small Web Crypto compatibility shim into HTML for LAN HTTP browsers. It provides `crypto.randomUUID` and `crypto.getRandomValues` before the DSH boot script runs.
 
 Verified on an x86 fnOS device:
 
 - App Center only shows `DeepSeek Harness 端口入口`.
 - The app listens on `0.0.0.0:3081`; DSH itself stays on `127.0.0.1:3080`.
-- Authenticated HTML contains the `crypto.randomUUID` polyfill before `window.__DSH_BOOT__`.
+- Authenticated HTML contains the Web Crypto compatibility shim before `window.__DSH_BOOT__`.
 
 Writable user data starts with fnOS data-share directories declared in `config/resource`:
 
@@ -144,13 +152,13 @@ before DSH starts.
 
 Do not change Harness to `0.0.0.0`; that exposes remote-code-execution capabilities.
 
-After the main service starts, the app runs this in the background:
+After the main service starts, the app mounts the bundled plugin market into the web profile:
 
 ```sh
-dsh plugin --profile web add dshmarket
+dsh plugin --profile web add link:$TRIM_APPDEST/runtime/node_modules/dshmarket
 ```
 
-It uses the packaged runtime `pnpm`, logs clearly, and never blocks the main app from running.
+It uses the packaged runtime `pnpm`, logs clearly, and never downloads the market package during app startup.
 
 Regenerate the black PNG icons from the DeepSeek Harness favicon with:
 

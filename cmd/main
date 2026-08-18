@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export PATH="/var/apps/nodejs_v22/target/bin:$PATH"
+export PATH="/var/apps/nodejs_v24/target/bin:$PATH"
 
 APP_DIR="$TRIM_APPDEST"
 DATA_DIR="$TRIM_PKGVAR"
@@ -18,7 +18,7 @@ PROXY_LOGFILE="$LOG_DIR/gateway-proxy.log"
 PROXY_ACCESS_LOGFILE="$LOG_DIR/gateway-access.log"
 GATEWAY_INSTALL_LOGFILE="$LOG_DIR/gateway-install.log"
 MARKET_LOGFILE="$LOG_DIR/dshmarket-install.log"
-MARKET_MARKER="$DATA_DIR/dshmarket-install.done"
+PROFILE_BOOTSTRAP_LOGFILE="$LOG_DIR/dsh-profile-bootstrap.log"
 BIN_DIR="$TMP_DIR/bin"
 GATEWAY_PORT="${GATEWAY_PORT:-3081}"
 GATEWAY_HOST="${GATEWAY_HOST:-0.0.0.0}"
@@ -27,6 +27,7 @@ ADMIN_PASSWORD_FILE="$DATA_DIR/gateway/admin-password.json"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
 ACCESS_PLUGIN_DIR="$RUNTIME_DIR/node_modules/@fnos/dsh-fnos-access"
+PROFILE_BOOTSTRAP="$APP_DIR/profile-bootstrap.mjs"
 
 write_error() {
   local message="$1"
@@ -142,10 +143,10 @@ require_dependencies() {
     write_error "DeepSeek Harness runtime is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
-  if [ ! -f "$RUNTIME_DIR/node_modules/node-pty/build/Release/pty.node" ]; then
-    write_error "DeepSeek Harness runtime is missing node-pty. Reinstall the app and check $DATA_DIR/logs/install.log."
+  node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >/dev/null 2>&1 || {
+    write_error "DeepSeek Harness runtime cannot load node-pty. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
-  fi
+  }
   if [ ! -f "$PNPM_BIN" ]; then
     write_error "DeepSeek Harness runtime is missing pnpm. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
@@ -154,37 +155,10 @@ require_dependencies() {
     write_error "DeepSeek Harness fnOS access package is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
     exit 1
   fi
-}
-
-migrate_legacy_gateway_profile() {
-  profile_web_dir="${PROFILE_DIR:-$DATA_DIR/profiles}/dsh/profiles/web"
-  package_json="$profile_web_dir/package.json"
-  [ -f "$package_json" ] || return 0
-
-  node - "$package_json" <<'NODE' >> "$GATEWAY_INSTALL_LOGFILE" 2>&1 || true
-const fs = require("fs");
-const file = process.argv[2];
-const packageJson = JSON.parse(fs.readFileSync(file, "utf8"));
-let changed = false;
-for (const name of ["@fnos/deepseek-harness-gateway", "@fnos/dsh-fnos-access"]) {
-  if (packageJson.dependencies && packageJson.dependencies[name]) {
-    delete packageJson.dependencies[name];
-    changed = true;
-  }
-}
-const bundles = packageJson.dsh && packageJson.dsh.profile && packageJson.dsh.profile.bundles;
-if (Array.isArray(bundles)) {
-  const filtered = bundles.filter((item) => item !== "@fnos/deepseek-harness-gateway" && item !== "@fnos/dsh-fnos-access");
-  if (filtered.length !== bundles.length) {
-    packageJson.dsh.profile.bundles = filtered;
-    changed = true;
-  }
-}
-if (changed) {
-  fs.writeFileSync(file, `${JSON.stringify(packageJson, null, 2)}\n`);
-  console.log(`${new Date().toISOString()} removed fnOS access packages from web profile`);
-}
-NODE
+  if [ ! -f "$RUNTIME_DIR/node_modules/dshmarket/cordis.patch.yml" ]; then
+    write_error "DeepSeek Harness runtime is missing dshmarket. Reinstall the app and check $DATA_DIR/logs/install.log."
+    exit 1
+  fi
 }
 
 build_trusted_host_args() {
@@ -197,42 +171,26 @@ build_trusted_host_args() {
   done
 }
 
-install_dshmarket_once() {
-  if [ -f "$MARKET_MARKER" ]; then
-    return 0
+bootstrap_profile() {
+  if [ ! -f "$PROFILE_BOOTSTRAP" ]; then
+    write_error "DeepSeek Harness profile bootstrap is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
+    exit 1
   fi
 
-  (
-    export HOME="${PROFILE_DIR:-$HOME_DIR/home}"
-    export DSH_HOME="${PROFILE_DIR:-$HOME_DIR}/dsh"
-    export XDG_CONFIG_HOME="${PROFILE_DIR:-$DATA_DIR}/config"
-    export XDG_DATA_HOME="${PROFILE_DIR:-$DATA_DIR}/data"
-    export XDG_CACHE_HOME="$TMP_DIR/cache"
-    mkdir -p "$BIN_DIR"
-    cat > "$BIN_DIR/pnpm" <<EOF
-#!/bin/sh
-exec /var/apps/nodejs_v22/target/bin/node "$PNPM_BIN" "\$@"
-EOF
-    chmod +x "$BIN_DIR/pnpm"
-    export PATH="$BIN_DIR:$PATH"
-    cd "$RUNTIME_DIR" || exit 0
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Installing dshmarket..." >> "$MARKET_LOGFILE"
-    "$DSH_BIN" plugin --profile web add dshmarket >> "$MARKET_LOGFILE" 2>&1
-    status="$?"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - dshmarket installer exited with $status" >> "$MARKET_LOGFILE"
-    if [ "$status" = "0" ]; then
-      touch "$MARKET_MARKER"
-    fi
-  ) &
-  installer_pid="$!"
+  export DSH_TOOL_BIN_DIR="$BIN_DIR"
+  export NODE_BIN="/var/apps/nodejs_v24/target/bin/node"
+  export PROFILE_BOOTSTRAP_LOGFILE="$PROFILE_BOOTSTRAP_LOGFILE"
+  export RUNTIME_DIR="$RUNTIME_DIR"
+  export DSH_PLUGIN_BUILD_POLICY="${DSH_PLUGIN_BUILD_POLICY:-allow-all}"
+  if ! node "$PROFILE_BOOTSTRAP" >> "$PROFILE_BOOTSTRAP_LOGFILE" 2>&1; then
+    write_error "DeepSeek Harness profile bootstrap failed. Check $PROFILE_BOOTSTRAP_LOGFILE for details."
+    exit 1
+  fi
 
-  (
-    sleep 180
-    if kill -0 "$installer_pid" >/dev/null 2>&1; then
-      echo "$(date '+%Y-%m-%d %H:%M:%S') - dshmarket installer timed out" >> "$MARKET_LOGFILE"
-      kill "$installer_pid" >/dev/null 2>&1 || true
-    fi
-  ) &
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) export PATH="$BIN_DIR:$PATH" ;;
+  esac
 }
 
 start_app() {
@@ -257,8 +215,7 @@ start_app() {
   export XDG_CONFIG_HOME="$PROFILE_DIR/config"
   export XDG_DATA_HOME="$PROFILE_DIR/data"
   export XDG_CACHE_HOME="$TMP_DIR/cache"
-
-  migrate_legacy_gateway_profile
+  bootstrap_profile
 
   if ! is_dsh_running; then
     set -- "$DSH_BIN" web --host "$HOST" --port "$PORT"
@@ -312,7 +269,6 @@ start_app() {
     exit 1
   fi
 
-  install_dshmarket_once
 }
 
 stop_pidfile() {

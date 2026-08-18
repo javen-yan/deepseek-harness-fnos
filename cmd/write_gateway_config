@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export PATH="/var/apps/nodejs_v22/target/bin:$PATH"
+export PATH="/var/apps/nodejs_v24/target/bin:$PATH"
 
 APP_DIR="$TRIM_APPDEST"
 DATA_DIR="$TRIM_PKGVAR"

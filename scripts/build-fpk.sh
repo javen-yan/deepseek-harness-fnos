@@ -88,6 +88,16 @@ fs.writeFileSync(manifestPath, manifest);
 
 fs.copyFileSync(path.join(runtimeDir, runtimeArchive), path.join(stagingDir, "app", runtimeArchive));
 fs.copyFileSync(path.join(runtimeDir, runtimeSha), path.join(stagingDir, "app", runtimeSha));
+
+for (const file of [
+  path.join(stagingDir, "app", "profile-bootstrap.mjs"),
+  path.join(stagingDir, "app", runtimeArchive),
+  path.join(stagingDir, "app", runtimeSha),
+]) {
+  if (!fs.existsSync(file)) {
+    throw new Error(`staged FPK is missing ${file}`);
+  }
+}
 NODE
 
 (

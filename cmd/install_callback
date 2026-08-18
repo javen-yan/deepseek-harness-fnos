@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export PATH="/var/apps/nodejs_v22/target/bin:$PATH"
+export PATH="/var/apps/nodejs_v24/target/bin:$PATH"
 
 APP_DIR="$TRIM_APPDEST"
 DATA_DIR="$TRIM_PKGVAR"
@@ -57,10 +57,11 @@ sha256_file() {
 }
 
 verify_runtime() {
+  [ -f "$APP_DIR/profile-bootstrap.mjs" ] || fail "App is missing profile-bootstrap.mjs."
   [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ] || fail "Runtime is missing executable node_modules/.bin/dsh."
-  [ -f "$RUNTIME_DIR/node_modules/node-pty/build/Release/pty.node" ] || fail "Runtime is missing node-pty native module."
   [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html" ] || fail "Runtime is missing DSH web frontend."
   [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" ] || fail "Runtime is missing DSH app boot."
+  [ -f "$RUNTIME_DIR/node_modules/dshmarket/cordis.patch.yml" ] || fail "Runtime is missing bundled dshmarket."
   [ -f "$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs" ] || fail "Runtime is missing packaged pnpm."
 
   if ! node -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
@@ -73,7 +74,7 @@ verify_runtime() {
 }
 
 if ! command -v node >/dev/null 2>&1; then
-  write_error "Node.js runtime is unavailable. Please install or enable nodejs_v22."
+  write_error "Node.js runtime is unavailable. Please install or enable nodejs_v24."
   exit 1
 fi
 

@@ -71,7 +71,7 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
   -e LOCAL_ACCESS_TGZ="$LOCAL_ACCESS_TGZ" \
   -v "$WORK_DIR:/work" \
   -w /work \
-  node:22.18-bookworm \
+  node:24-bookworm \
   bash -lc '
     set -euo pipefail
     if [ -n "${LOCAL_ACCESS_TGZ:-}" ]; then
@@ -80,13 +80,14 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
       npm ci --omit=dev --no-audit --no-fund
     fi
     test -x node_modules/.bin/dsh
-    test -f node_modules/node-pty/build/Release/pty.node
     test -f node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
     test -f node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
     test -f node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs
     test -f node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs
+    test -f node_modules/dshmarket/cordis.patch.yml
     test -f node_modules/pnpm/bin/pnpm.mjs
     node -e "require(\"./node_modules/node-pty\")"
+    find node_modules/node-pty -name "pty.node" -print -quit | grep -q .
     if [ -f node_modules/@deepseek-ai/dsh-client-connection/lib/index.js ]; then
       ! grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
     fi
