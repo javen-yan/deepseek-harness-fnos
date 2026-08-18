@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.6-17
+version=0.1.0-rc.7-1
 display_name=DeepSeek Harness
 desc=DeepSeek Harness 的 fnOS 原生全量封装，内置 Linux 运行时，并通过 3081 端口提供安全访问入口。
 source=thirdparty
@@ -19,4 +19,4 @@ ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v22
 disable_authorization_path=true
-changelog=切换为 3081 端口入口，并使用独立访问网关承载 DeepSeek Harness 官方 Web UI。
+changelog=Update DeepSeek Harness to 0.1.0-rc.7.
