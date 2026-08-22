@@ -1,5 +1,5 @@
 appname=deepseek_harness
-version=0.1.0-rc.7-7
+version=0.1.1-rc.2-1
 display_name=DeepSeek Harness
 desc=DeepSeek Harness Full for fnOS：不只是主体 Web UI，内置 DSH 运行时、插件市场、pnpm、node-gyp 与 3081 安全入口，尽量保留官方 DSH 的插件生态和 Agent 能力。
 source=thirdparty
@@ -18,4 +18,4 @@ desktop_applaunchname=deepseek_harness.main
 ctl_stop=true
 checkport=false
 install_dep_apps=nodejs_v24
-changelog=Update DeepSeek Harness to 0.1.0-rc.7.
+changelog=Update DeepSeek Harness to 0.1.1-rc.2.
