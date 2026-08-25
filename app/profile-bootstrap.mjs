@@ -93,6 +93,8 @@ const runtimePackage = path.join(runtimeDir, "package.json");
 if (!fs.existsSync(runtimePackage)) fail(`Runtime package.json is missing: ${runtimePackage}`);
 
 const runtimeRequire = createRequire(runtimePackage);
+const dshPackage = runtimeRequire.resolve("@deepseek-ai/dsh/package.json");
+const dshRequire = createRequire(dshPackage);
 const nodeBin = process.env.NODE_BIN || process.execPath;
 const binDir = process.env.DSH_TOOL_BIN_DIR;
 const dshBin = path.join(runtimeDir, "node_modules", ".bin", "dsh");
@@ -112,7 +114,19 @@ if (binDir) {
   ensureExecutableWrapper(path.join(binDir, "dsh"), nodeBin, dshBin);
 }
 
-const appBootUrl = pathToFileURL(runtimeRequire.resolve("@deepseek-ai/dsh-app-boot")).href;
+function resolveRuntimeModule(name) {
+  try {
+    return runtimeRequire.resolve(name);
+  } catch (rootError) {
+    try {
+      return dshRequire.resolve(name);
+    } catch {
+      throw rootError;
+    }
+  }
+}
+
+const appBootUrl = pathToFileURL(resolveRuntimeModule("@deepseek-ai/dsh-app-boot")).href;
 const {
   PROFILE_TEMPLATES,
   healProfilesModuleFallback,

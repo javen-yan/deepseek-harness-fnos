@@ -79,17 +79,58 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
     else
       npm ci --omit=dev --no-audit --no-fund
     fi
-    test -x node_modules/.bin/dsh
-    test -f node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
-    test -f node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-    test -f node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs
-    test -f node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs
-    test -f node_modules/dshmarket/cordis.patch.yml
-    test -f node_modules/pnpm/bin/pnpm.mjs
-    test -f node_modules/node-gyp/bin/node-gyp.js
-    test -f node_modules/prebuild-install/bin.js
-    node -e "require(\"./node_modules/node-pty\")"
-    find node_modules/node-pty -name "pty.node" -print -quit | grep -q .
+    node <<'"'"'NODE'"'"'
+const fs = require("fs");
+const path = require("path");
+const { createRequire } = require("module");
+
+const runtimeDir = process.cwd();
+const runtimeRequire = createRequire(path.join(runtimeDir, "package.json"));
+const dshPackage = runtimeRequire.resolve("@deepseek-ai/dsh/package.json");
+const dshRequire = createRequire(dshPackage);
+
+function assertFile(file, label) {
+  if (!fs.existsSync(file)) {
+    throw new Error(`${label} is missing: ${file}`);
+  }
+  console.log(`ok ${label}: ${file}`);
+}
+
+function resolveModule(name) {
+  try {
+    return runtimeRequire.resolve(name);
+  } catch (error) {
+    try {
+      return dshRequire.resolve(name);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+assertFile(path.join(runtimeDir, "node_modules/.bin/dsh"), "DSH CLI");
+assertFile(path.join(runtimeDir, "node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html"), "DSH web frontend");
+assertFile(resolveModule("@deepseek-ai/dsh-app-boot"), "DSH app boot");
+assertFile(path.join(runtimeDir, "node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs"), "fnOS access edge proxy");
+assertFile(path.join(runtimeDir, "node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs"), "fnOS access admin auth");
+assertFile(path.join(runtimeDir, "node_modules/dshmarket/cordis.patch.yml"), "bundled dshmarket");
+assertFile(path.join(runtimeDir, "node_modules/pnpm/bin/pnpm.mjs"), "packaged pnpm");
+assertFile(path.join(runtimeDir, "node_modules/node-gyp/bin/node-gyp.js"), "packaged node-gyp");
+assertFile(path.join(runtimeDir, "node_modules/prebuild-install/bin.js"), "packaged prebuild-install");
+
+require(path.join(runtimeDir, "node_modules/node-pty"));
+const nativePty = [];
+function walk(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(file);
+    else if (entry.name === "pty.node") nativePty.push(file);
+  }
+}
+walk(path.join(runtimeDir, "node_modules/node-pty"));
+if (!nativePty.length) throw new Error("node-pty native pty.node is missing");
+console.log(`ok node-pty native: ${nativePty[0]}`);
+NODE
     if [ -f node_modules/@deepseek-ai/dsh-client-connection/lib/index.js ]; then
       ! grep -q "fnOS patch: allow trusted-host authorities to access the Web configuration plane" node_modules/@deepseek-ai/dsh-client-connection/lib/index.js
     fi

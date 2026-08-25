@@ -62,11 +62,42 @@ verify_runtime() {
   [ -f "$APP_DIR/github-download-shim.cjs" ] || fail "App is missing github-download-shim.cjs."
   [ -x "$RUNTIME_DIR/node_modules/.bin/dsh" ] || fail "Runtime is missing executable node_modules/.bin/dsh."
   [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html" ] || fail "Runtime is missing DSH web frontend."
-  [ -f "$RUNTIME_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" ] || fail "Runtime is missing DSH app boot."
   [ -f "$RUNTIME_DIR/node_modules/dshmarket/cordis.patch.yml" ] || fail "Runtime is missing bundled dshmarket."
   [ -f "$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs" ] || fail "Runtime is missing packaged pnpm."
   [ -f "$RUNTIME_DIR/node_modules/node-gyp/bin/node-gyp.js" ] || fail "Runtime is missing packaged node-gyp."
   [ -f "$RUNTIME_DIR/node_modules/prebuild-install/bin.js" ] || fail "Runtime is missing packaged prebuild-install."
+
+  if ! "$NODE_BIN" - "$RUNTIME_DIR" >> "$LOGFILE" 2>&1 <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const { createRequire } = require("module");
+
+const [runtimeDir] = process.argv.slice(2);
+const runtimeRequire = createRequire(path.join(runtimeDir, "package.json"));
+const dshPackage = runtimeRequire.resolve("@deepseek-ai/dsh/package.json");
+const dshRequire = createRequire(dshPackage);
+
+function resolveModule(name) {
+  try {
+    return runtimeRequire.resolve(name);
+  } catch (error) {
+    try {
+      return dshRequire.resolve(name);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+const appBoot = resolveModule("@deepseek-ai/dsh-app-boot");
+if (!fs.existsSync(appBoot)) {
+  throw new Error(`resolved app boot entry is missing: ${appBoot}`);
+}
+console.log(`Resolved DSH app boot: ${appBoot}`);
+NODE
+  then
+    fail "Runtime is missing resolvable DSH app boot. Check $LOGFILE."
+  fi
 
   if ! "$NODE_BIN" -e "require(process.argv[1])" "$RUNTIME_DIR/node_modules/node-pty" >> "$LOGFILE" 2>&1; then
     fail "Runtime node-pty module failed to load. Check $LOGFILE."

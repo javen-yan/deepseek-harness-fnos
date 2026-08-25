@@ -8,7 +8,7 @@ Local page source: [`site/index.html`](site/index.html)
 
 Maintainer and publisher: [javen-yan](https://javen-yan.github.io/)
 
-Current recommended version: `0.1.0-rc.7-7`.
+Current recommended version: `0.1.1-rc.2-2`.
 
 The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
