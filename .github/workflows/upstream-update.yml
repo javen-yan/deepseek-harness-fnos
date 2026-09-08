@@ -9,6 +9,10 @@ on:
         description: "Override @deepseek-ai/dsh version. Leave empty to use npm latest."
         required: false
         type: string
+      dshmarket_version:
+        description: "Override dshmarket version. Leave empty to use npm latest."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -32,14 +36,34 @@ jobs:
         run: |
           set -euo pipefail
           CURRENT="$(node -p "require('./app/package.json').dependencies['@deepseek-ai/dsh']")"
+          CURRENT_DSHMARKET="$(node -p "require('./app/package.json').dependencies.dshmarket")"
+          CURRENT_APP_VERSION="$(node -p "require('./app/package.json').version")"
           if [ -n "${{ inputs.dsh_version }}" ]; then
             LATEST="${{ inputs.dsh_version }}"
           else
             LATEST="$(npm view @deepseek-ai/dsh version)"
           fi
+          if [ -n "${{ inputs.dshmarket_version }}" ]; then
+            LATEST_DSHMARKET="${{ inputs.dshmarket_version }}"
+          else
+            LATEST_DSHMARKET="$(npm view dshmarket version)"
+          fi
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT" = "$LATEST" ]; then
+          echo "current_dshmarket=$CURRENT_DSHMARKET" >> "$GITHUB_OUTPUT"
+          echo "latest_dshmarket=$LATEST_DSHMARKET" >> "$GITHUB_OUTPUT"
+          echo "current_app_version=$CURRENT_APP_VERSION" >> "$GITHUB_OUTPUT"
+          CURRENT_APP_UPSTREAM="${CURRENT_APP_VERSION%-*}"
+          CURRENT_APP_REVISION="${CURRENT_APP_VERSION##*-}"
+          if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_APP_UPSTREAM" = "$LATEST" ] && [[ "$CURRENT_APP_REVISION" =~ ^[0-9]+$ ]]; then
+            NEXT_APP_REVISION="$((CURRENT_APP_REVISION + 1))"
+          else
+            NEXT_APP_REVISION="1"
+          fi
+          NEXT_APP_VERSION="${LATEST}-${NEXT_APP_REVISION}"
+          echo "next_app_revision=$NEXT_APP_REVISION" >> "$GITHUB_OUTPUT"
+          echo "next_app_version=$NEXT_APP_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_DSHMARKET" = "$LATEST_DSHMARKET" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -47,7 +71,7 @@ jobs:
 
       - name: Bump package metadata
         if: steps.versions.outputs.changed == 'true'
-        run: node scripts/bump-dsh-version.js "${{ steps.versions.outputs.latest }}"
+        run: node scripts/bump-dsh-version.js "${{ steps.versions.outputs.latest }}" "${{ steps.versions.outputs.latest_dshmarket }}" "${{ steps.versions.outputs.next_app_revision }}"
 
       - name: Refresh package lock
         if: steps.versions.outputs.changed == 'true'
@@ -60,15 +84,15 @@ jobs:
         if: steps.versions.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
-          branch: bot/update-dsh-${{ steps.versions.outputs.latest }}
-          commit-message: "chore: update dsh to ${{ steps.versions.outputs.latest }}"
-          title: "chore: update DeepSeek Harness to ${{ steps.versions.outputs.latest }}"
+          branch: bot/update-runtime-${{ steps.versions.outputs.latest }}-dshmarket-${{ steps.versions.outputs.latest_dshmarket }}
+          commit-message: "chore: update DeepSeek Harness runtime packages"
+          title: "chore: update DeepSeek Harness runtime packages"
           body: |
-            Automated update for `@deepseek-ai/dsh`.
+            Automated update for DeepSeek Harness runtime packages.
 
-            - Previous: `${{ steps.versions.outputs.current }}`
-            - Latest: `${{ steps.versions.outputs.latest }}`
-            - fnOS app version: `${{ steps.versions.outputs.latest }}-1`
+            - `@deepseek-ai/dsh`: `${{ steps.versions.outputs.current }}` -> `${{ steps.versions.outputs.latest }}`
+            - `dshmarket`: `${{ steps.versions.outputs.current_dshmarket }}` -> `${{ steps.versions.outputs.latest_dshmarket }}`
+            - fnOS app version: `${{ steps.versions.outputs.current_app_version }}` -> `${{ steps.versions.outputs.next_app_version }}`
           labels: |
             dependencies
             automated

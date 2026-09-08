@@ -129,7 +129,7 @@ This repository publishes itself from GitHub:
 4. macOS downloads the runtime archives, runs official `fnpack`, and builds x86/arm Full FPK files.
 5. The release uploads two recommended FPK files plus runtime debug assets.
 
-Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` daily and can also be triggered manually. When a newer upstream version exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest`.
+Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` and `npm view dshmarket version` daily and can also be triggered manually. When a newer upstream runtime package exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest`.
 
 ## Runtime Behavior
 
