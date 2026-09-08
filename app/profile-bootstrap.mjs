@@ -137,9 +137,27 @@ const {
 } = await import(appBootUrl);
 
 const yaml = runtimeRequire("js-yaml");
-healProfilesModuleFallback(runtimePackage, dshHome);
+
+async function healModuleFallback(heal, installAnchor, home) {
+  const source = Function.prototype.toString.call(heal);
+  if (/healProfilesModuleFallback\s*\(\s*options\s*\)/.test(source)) {
+    await heal({ installAnchor, home });
+  } else {
+    await heal(installAnchor, home);
+  }
+}
+
+function initProfileCompat(init, dir, template) {
+  if (Array.isArray(template)) {
+    init(dir, template);
+  } else {
+    init(dir, template.bundles, template.patchReload);
+  }
+}
+
+await healModuleFallback(healProfilesModuleFallback, runtimePackage, dshHome);
 const profileDir = resolveProfileDir("web", dshHome);
-initProfile(profileDir, PROFILE_TEMPLATES.web);
+initProfileCompat(initProfile, profileDir, PROFILE_TEMPLATES.web);
 
 const manifestBefore = readProfileManifest("deepseek-harness-fnos", profileDir);
 const manifest = structuredClone(manifestBefore);

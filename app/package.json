@@ -1,6 +1,6 @@
 {
   "name": "fnos-deepseek-harness-runtime",
-  "version": "0.1.2-rc.1-1",
+  "version": "0.1.2-rc.1-2",
   "private": true,
   "description": "Full fnOS runtime for the javen-yan DeepSeek Harness wrapper.",
   "dependencies": {
