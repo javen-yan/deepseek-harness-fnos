@@ -1,12 +1,12 @@
 {
   "name": "fnos-deepseek-harness-runtime",
-  "version": "0.1.2-rc.1-2",
+  "version": "0.1.5-rc.1-1",
   "private": true,
   "description": "Full fnOS runtime for the javen-yan DeepSeek Harness wrapper.",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.2-rc.1",
+    "@deepseek-ai/dsh": "0.1.5-rc.1",
     "@fnos/dsh-fnos-access": "https://codeload.github.com/javen-yan/dsh-remote-gateway/tar.gz/5026f3a",
-    "dshmarket": "1.45.0",
+    "dshmarket": "1.46.0",
     "node-gyp": "^13.0.1",
     "pnpm": "11.7.0",
     "prebuild-install": "^7.1.3"
