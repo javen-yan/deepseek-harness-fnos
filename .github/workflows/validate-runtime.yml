@@ -1,0 +1,41 @@
+name: Validate Runtime
+
+on:
+  pull_request:
+    paths:
+      - "app/package.json"
+      - "app/package-lock.json"
+      - "app/profile-bootstrap.mjs"
+      - "app/proxy.js"
+      - "cmd/**"
+      - "manifest"
+      - "scripts/build-runtime.sh"
+      - ".github/workflows/validate-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      # build-runtime.sh installs the exact runtime closure, verifies every
+      # physical gate, then boots the web profile and exchanges the DSH launch
+      # token. A PR that cannot produce a working runtime fails here instead of
+      # at release time.
+      - name: Build and smoke-test runtime
+        run: TARGET_ARCH=x64 ./scripts/build-runtime.sh

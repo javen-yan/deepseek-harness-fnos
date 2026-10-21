@@ -127,14 +127,21 @@ function resolveRuntimeModule(name) {
 }
 
 const appBootUrl = pathToFileURL(resolveRuntimeModule("@deepseek-ai/dsh-app-boot")).href;
+const appBoot = await import(appBootUrl);
 const {
   PROFILE_TEMPLATES,
-  healProfilesModuleFallback,
   initProfile,
   readProfileManifest,
   resolveProfileDir,
   writeProfileManifest,
-} = await import(appBootUrl);
+} = appBoot;
+
+// app-boot <= 0.1.5 projects bundle-carried packages into the profile with
+// `healProfilesModuleFallback`. 0.1.7 replaces it with `removeLinkProjections`,
+// which deletes the projections the old backend left behind.
+const healProfilesModuleFallback = appBoot.healProfilesModuleFallback;
+const removeLinkProjections = appBoot.removeLinkProjections;
+const writeProfileBundles = appBoot.writeProfileBundles;
 
 const yaml = runtimeRequire("js-yaml");
 
@@ -147,16 +154,70 @@ async function healModuleFallback(heal, installAnchor, home) {
   }
 }
 
+async function migrateLegacyModuleLayout(profileDir, installAnchor, home) {
+  if (typeof healProfilesModuleFallback === "function") {
+    await healModuleFallback(healProfilesModuleFallback, installAnchor, home);
+    return;
+  }
+  if (typeof removeLinkProjections === "function") {
+    removeLinkProjections(profileDir);
+    log("removed legacy profile link projections");
+  }
+}
+
 function initProfileCompat(init, dir, template) {
   if (Array.isArray(template)) {
     init(dir, template);
   } else {
+    // The third argument was dropped in app-boot 0.1.7; passing it is harmless
+    // there and required by 0.1.2 - 0.1.5.
     init(dir, template.bundles, template.patchReload);
   }
 }
 
-await healModuleFallback(healProfilesModuleFallback, runtimePackage, dshHome);
+function writeProfileCompat(dir, manifest) {
+  if (typeof writeProfileBundles === "function") {
+    writeProfileBundles(dir, manifest, manifest.dsh?.profile?.bundles ?? []);
+  } else {
+    writeProfileManifest(dir, manifest);
+  }
+}
+
+// app-boot 0.1.7+ resolves a bundle entry from the profile directory. Baseline
+// bundles come from the installation anchor, but an out-of-tree bundle such as
+// dshmarket only exists in the runtime's node_modules, which is outside the
+// profile's parent walk. Expose it through the shared profiles/node_modules
+// directory the same way app-boot <= 0.1.5 did for the whole closure.
+function linkRuntimeBundle(bundleName) {
+  const segments = bundleName.split("/");
+  const source = path.join(runtimeDir, "node_modules", ...segments);
+  if (!fs.existsSync(source)) {
+    fail(`Runtime is missing bundled plugin ${bundleName}: ${source}`);
+  }
+  const sharedModules = path.join(dshHome, "profiles", "node_modules");
+  const target = path.join(sharedModules, ...segments);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+
+  let current = null;
+  try {
+    current = fs.readlinkSync(target);
+  } catch {
+    current = null;
+  }
+  if (current === source) return;
+
+  if (current !== null) {
+    fs.unlinkSync(target);
+  } else if (fs.existsSync(target)) {
+    // A real package directory installed by the user wins over our link.
+    return;
+  }
+  fs.symlinkSync(source, target, "dir");
+  log(`linked bundled plugin ${bundleName} into ${sharedModules}`);
+}
+
 const profileDir = resolveProfileDir("web", dshHome);
+await migrateLegacyModuleLayout(profileDir, runtimePackage, dshHome);
 initProfileCompat(initProfile, profileDir, PROFILE_TEMPLATES.web);
 
 const manifestBefore = readProfileManifest("deepseek-harness-fnos", profileDir);
@@ -179,9 +240,10 @@ manifest.dsh.profile.bundles = [
   )),
   "dshmarket",
 ];
+linkRuntimeBundle("dshmarket");
 
 if (!sameJson(manifestBefore, manifest)) {
-  writeProfileManifest(profileDir, manifest);
+  writeProfileCompat(profileDir, manifest);
   log(`updated web profile manifest ${path.join(profileDir, "package.json")}`);
 }
 

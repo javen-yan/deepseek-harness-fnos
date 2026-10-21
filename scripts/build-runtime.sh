@@ -65,6 +65,10 @@ NODE
   echo "Using local fnOS access plugin package: $ACCESS_PLUGIN_SOURCE -> $LOCAL_ACCESS_TGZ"
 fi
 
+# The runtime smoke test boots the web profile exactly the way the fnOS app
+# does; keep the script beside the install tree but outside the packed archive.
+cp "$ROOT_DIR/app/profile-bootstrap.mjs" "$WORK_DIR/profile-bootstrap.smoke.mjs"
+
 docker run --rm --platform "$DOCKER_PLATFORM" \
   --user "$(id -u):$(id -g)" \
   -e HOME=/tmp \
@@ -74,10 +78,15 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
   node:24-bookworm \
   bash -lc '
     set -euo pipefail
+    allow_scripts_flag=""
+    if npm install-scripts --help >/dev/null 2>&1; then
+      # npm >= 11.19 blocks dependency install scripts unless approved.
+      allow_scripts_flag="--dangerously-allow-all-scripts"
+    fi
     if [ -n "${LOCAL_ACCESS_TGZ:-}" ]; then
-      npm install --omit=dev --no-audit --no-fund
+      npm install --omit=dev --no-audit --no-fund $allow_scripts_flag
     else
-      npm ci --omit=dev --no-audit --no-fund
+      npm ci --omit=dev --no-audit --no-fund $allow_scripts_flag
     fi
     node <<'"'"'NODE'"'"'
 const fs = require("fs");
@@ -124,11 +133,11 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(file);
-    else if (entry.name === "pty.node") nativePty.push(file);
+    else if (entry.name === "pty.node" && file.includes(`${process.platform}-${process.arch}`)) nativePty.push(file);
   }
 }
 walk(path.join(runtimeDir, "node_modules/node-pty"));
-if (!nativePty.length) throw new Error("node-pty native pty.node is missing");
+if (!nativePty.length) throw new Error(`node-pty native pty.node is missing for ${process.platform}-${process.arch}`);
 console.log(`ok node-pty native: ${nativePty[0]}`);
 NODE
     if [ -f node_modules/@deepseek-ai/dsh-client-connection/lib/index.js ]; then
@@ -137,6 +146,39 @@ NODE
     ! grep -R "\\[fnos-access patch\\]" node_modules/@deepseek-ai >/dev/null
 
     node node_modules/node-gyp/bin/node-gyp.js --version >/dev/null
+
+    # Boot the web profile the way the fnOS app does. This catches a bundle that
+    # resolves in --dump-config but fails to import at activation, and proves
+    # the browser launch-token exchange still works.
+    rm -rf /tmp/smoke-home /tmp/smoke.log /tmp/smoke.cj
+    RUNTIME_DIR=/work DSH_HOME=/tmp/smoke-home PROFILE_BOOTSTRAP_LOGFILE=/tmp/smoke-bootstrap.log \
+      node /work/profile-bootstrap.smoke.mjs
+    node node_modules/.bin/dsh web --host 127.0.0.1 --port 0 --no-open > /tmp/smoke.log 2>&1 &
+    smoke_pid=$!
+    for _ in $(seq 1 60); do grep -q "dsh web:" /tmp/smoke.log && break; sleep 1; done
+    if grep -qi "did not activate\|failed to import" /tmp/smoke.log; then
+      cat /tmp/smoke.log >&2
+      kill "$smoke_pid" 2>/dev/null || true
+      exit 1
+    fi
+    smoke_url="$(grep -oE "http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+" /tmp/smoke.log | head -1)"
+    if [ -z "$smoke_url" ]; then
+      cat /tmp/smoke.log >&2
+      kill "$smoke_pid" 2>/dev/null || true
+      exit 1
+    fi
+    smoke_code="$(curl -s -c /tmp/smoke.cj -o /dev/null -w "%{http_code}" "$smoke_url")"
+    smoke_root="$(printf "%s" "$smoke_url" | sed -E "s#/\?token=.*##")"
+    smoke_page="$(curl -s -b /tmp/smoke.cj -o /tmp/smoke.html -w "%{http_code}" "$smoke_root/")"
+    kill "$smoke_pid" 2>/dev/null || true
+    wait "$smoke_pid" 2>/dev/null || true
+    if [ "$smoke_code" != "303" ] || [ "$smoke_page" != "200" ] || ! grep -q "__DSH_BOOT__" /tmp/smoke.html; then
+      echo "runtime smoke failed: token=$smoke_code index=$smoke_page" >&2
+      cat /tmp/smoke.log >&2
+      exit 1
+    fi
+    echo "ok runtime smoke: token exchange and web index"
+
     tar -czf /work/runtime.tgz package.json package-lock.json node_modules
   '
 
