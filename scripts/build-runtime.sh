@@ -88,6 +88,20 @@ docker run --rm --platform "$DOCKER_PLATFORM" \
     else
       npm ci --omit=dev --no-audit --no-fund $allow_scripts_flag
     fi
+
+    # A lockfile resolved by a different npm major can install a deeply nested
+    # tree instead of the hoisted one. The DSH prompt registry then loads two
+    # copies of dsh-system-prompt and every new Session fails with
+    # `agent-preset/invalid: persona ... section "deployment:persona-prefix"
+    # is already registered`. Fail here instead of shipping that runtime.
+    for shared in dsh-system-prompt dsh-persona; do
+      if [ ! -d "node_modules/@deepseek-ai/$shared" ]; then
+        echo "runtime tree is not hoisted: node_modules/@deepseek-ai/$shared is missing." >&2
+        echo "DSH resolves two copies of the prompt registry and every new Session fails." >&2
+        exit 1
+      fi
+    done
+    echo "ok hoisted runtime tree: $(ls node_modules/@deepseek-ai | wc -l) @deepseek-ai packages at the top level"
     node <<'"'"'NODE'"'"'
 const fs = require("fs");
 const path = require("path");

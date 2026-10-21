@@ -246,6 +246,32 @@ the compressed bytes while keeping `Content-Encoding: gzip`. Fixed in
 `@fnos/dsh-fnos-access` commit `71d6239`; the runtime smoke test now drives the
 proxy with `curl --compressed`.
 
+### New Session fails with `agent-preset/invalid: persona ... already registered`
+
+This means the runtime tree was installed **nested instead of hoisted**:
+`node_modules/@deepseek-ai/dsh-system-prompt` and `dsh-persona` exist only under
+`@deepseek-ai/dsh/node_modules/`. DSH then loads two prompt registries, and the
+agent preset's `persona` row collides with the deployment persona section, so
+every new Session is rejected.
+
+Two ways to get there:
+
+- `app/package-lock.json` was resolved by a different npm major than the build
+  image (for example npm 10 on macOS vs npm 11 on `node:24-bookworm`), or
+- the pinned DSH release itself resolves a nested tree (`0.2.1-rc.2` does).
+
+`scripts/build-runtime.sh` now fails the build when
+`node_modules/@deepseek-ai/dsh-system-prompt` is not at the top level, and
+`scripts/dsh-version-policy.js` blocks releases known to nest. Regenerate the
+lock **inside the build image** when bumping DSH:
+
+```sh
+docker run --rm --platform linux/amd64 -v "$PWD/app:/work" -w /work \
+  node:24-bookworm bash -lc 'rm -f package-lock.json && npm install --package-lock-only --ignore-scripts'
+```
+
+### "Failed to load plugins" page
+
 A "Failed to load plugins" page is a **third-party plugin** problem, not the
 wrapper. The message names the plugin and the client module it could not
 resolve. Plugins built for DSH `0.1.1-rc.2` still reference

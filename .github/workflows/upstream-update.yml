@@ -67,7 +67,12 @@ jobs:
           NEXT_APP_VERSION="${LATEST}-${NEXT_APP_REVISION}"
           echo "next_app_revision=$NEXT_APP_REVISION" >> "$GITHUB_OUTPUT"
           echo "next_app_version=$NEXT_APP_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_DSHMARKET" = "$LATEST_DSHMARKET" ]; then
+          BLOCKED="$(node -e 'process.stdout.write(require("./scripts/dsh-version-policy").blockedReason(process.argv[1]) ?? "")' "$LATEST")"
+          if [ -n "$BLOCKED" ]; then
+            echo "::warning::@deepseek-ai/dsh $LATEST is blocked: $BLOCKED"
+            echo "blocked=$BLOCKED" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$BLOCKED" ] || { [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_DSHMARKET" = "$LATEST_DSHMARKET" ]; }; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"

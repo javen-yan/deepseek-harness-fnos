@@ -134,3 +134,36 @@ Node 解析 bundle 代码时优先用 profile 副本，而 bundle patch 从 runt
 
 然后把 runtime 的 `dshmarket` 以软链形式放到 `$DSH_HOME/profiles/node_modules`。
 用户自己安装的其他插件不受影响。
+
+
+## 8. 运行时树必须是被 npm 提升（hoisted）的
+
+`0.2.1-rc.2` 在我们的依赖组合下会解析出**嵌套**的模块树：
+
+```
+node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-persona
+node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-system-prompt
+```
+
+顶层没有 `dsh-system-prompt` 时，DSH 会装载两份 prompt registry，于是新增会话
+失败：
+
+```
+agent-preset/invalid: persona (@deepseek-ai/dsh-persona): prompt section
+"deployment:persona-prefix" is already registered
+```
+
+已在无任何 fnOS 插件、干净 profile 的情况下复现。`0.2.1-rc.1` 会正常提升
+（顶层 304 个 `@deepseek-ai/*` 包），会话创建正常。
+
+同样的问题也会出现在 **lockfile 与构建镜像 npm 版本不一致**时：macOS 的
+npm 10 生成的 `app/package-lock.json`，在 `node:24-bookworm`（npm 11）里
+`npm ci` 出来的树只有 128 个顶层包，症状完全相同。
+
+因此：
+
+- `app/package-lock.json` 必须在构建镜像内用 Node 24 的 npm 生成；
+- `scripts/build-runtime.sh` 会断言 `dsh-system-prompt` / `dsh-persona` 位于顶层，
+  否则构建失败；
+- `scripts/dsh-version-policy.js` 记录已知会嵌套的版本（当前为 `0.2.1-rc.2`），
+  自动更新机器人不会再为它们开 PR。
