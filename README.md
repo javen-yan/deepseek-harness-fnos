@@ -8,7 +8,10 @@ Local page source: [`site/index.html`](site/index.html)
 
 Maintainer and publisher: [javen-yan](https://javen-yan.github.io/)
 
-Current recommended version: `0.1.1-rc.2-2`.
+Current recommended version: `0.2.1-rc.2-1`.
+
+Adapter notes for the upstream `0.2.x` changes (broken app-boot exports, browser
+launch token, plugin compatibility): [`docs/upstream-0.2-adaptation.md`](docs/upstream-0.2-adaptation.md).
 
 The FPK is a full package: it embeds one Linux runtime archive for the target platform. During installation fnOS only verifies SHA256 and extracts that archive to `TRIM_APPDEST/runtime`.
 
@@ -95,6 +98,14 @@ Or build both:
 TARGET_ARCH=all ./scripts/build-runtime.sh
 ```
 
+The build installs the exact runtime closure, asserts every physical runtime
+gate, then boots the web profile in the build container: it runs the profile
+bootstrap, starts `dsh web --port 0`, rejects any plugin that fails to activate,
+exchanges the printed launch token for a browser cookie, and requires the
+resulting index to contain `__DSH_BOOT__`. On npm 11.19+ the build passes
+`--dangerously-allow-all-scripts` so native dependency install scripts still
+run.
+
 Outputs:
 
 ```text
@@ -129,7 +140,7 @@ This repository publishes itself from GitHub:
 4. macOS downloads the runtime archives, runs official `fnpack`, and builds x86/arm Full FPK files.
 5. The release uploads two recommended FPK files plus runtime debug assets.
 
-Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` and `npm view dshmarket version` daily and can also be triggered manually. When a newer upstream runtime package exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest`.
+Upstream updates are handled by `Upstream Update PR`. It checks `npm view @deepseek-ai/dsh version` and `npm view dshmarket version` daily and can also be triggered manually. When a newer upstream runtime package exists, it opens a PR that updates `app/package.json`, `app/package-lock.json`, and `manifest`, then closes the bot PRs it supersedes. Every such PR runs `Validate Runtime`, which builds the runtime and runs the same boot/token smoke test before a human merges it.
 
 ## Runtime Behavior
 
@@ -185,11 +196,19 @@ and removes legacy fnOS gateway/profile plugin entries. The bundled plugin
 market is not installed with `dsh plugin add` during startup; user-installed
 market plugins use the bundled pnpm and registry configuration.
 
+The bootstrap is version-adaptive: it uses `removeLinkProjections` on app-boot
+`0.1.7+`, `healProfilesModuleFallback` on `0.1.2–0.1.5`, and
+`writeProfileBundles` when the runtime provides it. Because `0.1.7+` resolves
+bundles from the profile instead of the installation closure, `dshmarket` is
+exposed through `$DSH_HOME/profiles/node_modules` with a symlink to the bundled
+copy. A real directory installed there by the user always wins.
+
 Access is password based:
 
 - `/fnos-access/login` requires the management password configured in the fnOS wizard.
 - Login sets one HttpOnly `fnos_dsh_access` cookie and returns directly to the official DSH Web UI.
-- The edge proxy gates browser access and then forwards HTTP/WebSocket traffic unchanged to `127.0.0.1:3080` with loopback `Host` and `Origin`.
+- DSH `0.1.2+` additionally requires a browser cookie minted from the launch token it prints at startup. The app captures that token into `TRIM_PKGVAR/gateway/dsh-launch-token` (mode 0600); the edge proxy adds it to the first index navigation that has no DSH cookie, then DSH sets its signed cookie. A stale DSH cookie is cleared once and retried.
+- The edge proxy gates browser access and then forwards HTTP/WebSocket traffic to `127.0.0.1:3080` with loopback `Host` and `Origin`. DSH itself is started with `--no-open`.
 - The edge proxy injects only a small Web Crypto compatibility shim into HTML for LAN HTTP browsers. It provides `crypto.randomUUID` and `crypto.getRandomValues` before the DSH boot script runs.
 
 Verified on an x86 fnOS device:
@@ -216,3 +235,56 @@ Regenerate the black PNG icons from the DeepSeek Harness favicon with:
 ```sh
 NODE_PATH=/path/to/sharp/node_modules node scripts/generate-icons.js
 ```
+
+## Troubleshooting
+
+### "Failed to load plugins" / white screen after login
+
+The white screen that appeared right after the password prompt was an edge-proxy
+bug: DSH gzips the Web index, and the proxy injected the Web Crypto shim into
+the compressed bytes while keeping `Content-Encoding: gzip`. Fixed in
+`@fnos/dsh-fnos-access` commit `71d6239`; the runtime smoke test now drives the
+proxy with `curl --compressed`.
+
+### New Session fails with `agent-preset/invalid: persona ... already registered`
+
+This means the runtime tree was installed **nested instead of hoisted**:
+`node_modules/@deepseek-ai/dsh-system-prompt` and `dsh-persona` exist only under
+`@deepseek-ai/dsh/node_modules/`. DSH then loads two prompt registries, and the
+agent preset's `persona` row collides with the deployment persona section, so
+every new Session is rejected.
+
+Two ways to get there:
+
+- `app/package-lock.json` was resolved by a different npm major than the build
+  image (for example npm 10 on macOS vs npm 11 on `node:24-bookworm`), or
+- the pinned DSH release itself resolves a nested tree (`0.2.1-rc.2` does).
+
+`scripts/build-runtime.sh` now fails the build when
+`node_modules/@deepseek-ai/dsh-system-prompt` is not at the top level, and
+`scripts/dsh-version-policy.js` blocks releases known to nest. Regenerate the
+lock **inside the build image** when bumping DSH:
+
+```sh
+docker run --rm --platform linux/amd64 -v "$PWD/app:/work" -w /work \
+  node:24-bookworm bash -lc 'rm -f package-lock.json && npm install --package-lock-only --ignore-scripts'
+```
+
+### "Failed to load plugins" page
+
+A "Failed to load plugins" page is a **third-party plugin** problem, not the
+wrapper. The message names the plugin and the client module it could not
+resolve. Plugins built for DSH `0.1.1-rc.2` still reference
+`@deepseek-ai/dsh-client-runtime` and the `settingsScope` client service, both of
+which DSH `0.2.x` removed. Remove the plugin from the web profile and restart
+the app:
+
+1. Stop the app in App Center.
+2. Edit `TRIM_PKGVAR/profiles/dsh/profiles/web/package.json` and remove the
+   plugin from both `dependencies` and `dsh.profile.bundles`.
+3. Start the app. The plugin's files under `node_modules` can stay; they are not
+   loaded once the manifest no longer names it.
+
+Ask the plugin author to migrate to `@deepseek-ai/dsh-client-store` and the
+current settings service, and to narrow `dsh.engines.dsh` to the versions the
+plugin actually supports.
