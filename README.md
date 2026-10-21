@@ -235,3 +235,30 @@ Regenerate the black PNG icons from the DeepSeek Harness favicon with:
 ```sh
 NODE_PATH=/path/to/sharp/node_modules node scripts/generate-icons.js
 ```
+
+## Troubleshooting
+
+### "Failed to load plugins" / white screen after login
+
+The white screen that appeared right after the password prompt was an edge-proxy
+bug: DSH gzips the Web index, and the proxy injected the Web Crypto shim into
+the compressed bytes while keeping `Content-Encoding: gzip`. Fixed in
+`@fnos/dsh-fnos-access` commit `71d6239`; the runtime smoke test now drives the
+proxy with `curl --compressed`.
+
+A "Failed to load plugins" page is a **third-party plugin** problem, not the
+wrapper. The message names the plugin and the client module it could not
+resolve. Plugins built for DSH `0.1.1-rc.2` still reference
+`@deepseek-ai/dsh-client-runtime` and the `settingsScope` client service, both of
+which DSH `0.2.x` removed. Remove the plugin from the web profile and restart
+the app:
+
+1. Stop the app in App Center.
+2. Edit `TRIM_PKGVAR/profiles/dsh/profiles/web/package.json` and remove the
+   plugin from both `dependencies` and `dsh.profile.bundles`.
+3. Start the app. The plugin's files under `node_modules` can stay; they are not
+   loaded once the manifest no longer names it.
+
+Ask the plugin author to migrate to `@deepseek-ai/dsh-client-store` and the
+current settings service, and to narrow `dsh.engines.dsh` to the versions the
+plugin actually supports.

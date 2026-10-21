@@ -103,3 +103,18 @@
    upstream 的 patch 行。
 4. **路径模式**：如果以后要恢复前缀部署，用上游的 `--public-url` + 代理剥离前缀，
    不要再回到改写 boot URL 的做法。
+
+## 6. 第三方客户端插件不兼容的典型症状
+
+`@linxin666/dsh-client-ui-aionui-panel`（截至 0.3.6）是典型例子：
+
+- 它 `require("@deepseek-ai/dsh-client-runtime/client")`。该包只发布到 `0.1.1-rc.2`，
+  DSH 0.1.2+ 已把它拆成 `@deepseek-ai/dsh-client-store` / `dsh-client-ui-slots` 等，
+  0.2.1 的前端静态模块表里没有它。
+- 它的客户端插件还 `inject(["sessions", "locale", "settingsScope"])`，而 0.2.1 既没有
+  `settingsScope` 也没有 `webUiSettings`。
+- 它的 `dsh.engines.dsh` 写成 `>=0.1.1-rc.1`，上游兼容性检查因此放行，问题只在浏览器
+  boot 时才暴露（`web boot: N entry did not activate`）。
+
+结论：这类插件需要作者按新版客户端服务迁移，封装层无法也不应该替它做兼容。
+临时处理是从 profile 中移除该插件（见 README 的故障排查）。
