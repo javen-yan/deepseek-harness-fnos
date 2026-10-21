@@ -150,7 +150,7 @@ NODE
     # Boot the web profile the way the fnOS app does. This catches a bundle that
     # resolves in --dump-config but fails to import at activation, and proves
     # the browser launch-token exchange still works.
-    rm -rf /tmp/smoke-home /tmp/smoke.log /tmp/smoke.cj
+    rm -rf /tmp/smoke-home /tmp/smoke.log /tmp/smoke.cj /tmp/smoke-token /tmp/gw-index.html
     RUNTIME_DIR=/work DSH_HOME=/tmp/smoke-home PROFILE_BOOTSTRAP_LOGFILE=/tmp/smoke-bootstrap.log \
       node /work/profile-bootstrap.smoke.mjs
     node node_modules/.bin/dsh web --host 127.0.0.1 --port 0 --no-open > /tmp/smoke.log 2>&1 &
@@ -167,17 +167,30 @@ NODE
       kill "$smoke_pid" 2>/dev/null || true
       exit 1
     fi
-    smoke_code="$(curl -s -c /tmp/smoke.cj -o /dev/null -w "%{http_code}" "$smoke_url")"
-    smoke_root="$(printf "%s" "$smoke_url" | sed -E "s#/\?token=.*##")"
-    smoke_page="$(curl -s -b /tmp/smoke.cj -o /tmp/smoke.html -w "%{http_code}" "$smoke_root/")"
-    kill "$smoke_pid" 2>/dev/null || true
-    wait "$smoke_pid" 2>/dev/null || true
-    if [ "$smoke_code" != "303" ] || [ "$smoke_page" != "200" ] || ! grep -q "__DSH_BOOT__" /tmp/smoke.html; then
-      echo "runtime smoke failed: token=$smoke_code index=$smoke_page" >&2
-      cat /tmp/smoke.log >&2
+    smoke_port="$(printf "%s" "$smoke_url" | sed -E "s#.*:([0-9]+)/.*#\1#")"
+    printf "%s" "$smoke_url" | sed -E "s#.*token=##" > /tmp/smoke-token
+
+    # Drive the bundled fnOS edge proxy with a browser-shaped request. This is
+    # the regression gate for the launch-token exchange and for HTML that the
+    # upstream gzips: curl --compressed fails loudly if the proxy re-serves a
+    # rewritten document with its original content-encoding.
+    node -e "require(\"/work/node_modules/@fnos/dsh-fnos-access/lib/admin-auth.cjs\").writePasswordFile(\"/tmp/gw-admin.json\",\"password123\")"
+    UPSTREAM_HOST=127.0.0.1 UPSTREAM_PORT="$smoke_port" GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=3081 \
+      FNOS_ACCESS_PASSWORD_FILE=/tmp/gw-admin.json DSH_LAUNCH_TOKEN_FILE=/tmp/smoke-token \
+      node -e "require(\"/work/node_modules/@fnos/dsh-fnos-access/lib/edge-proxy.cjs\").startFromEnv()" > /tmp/smoke-gw.log 2>&1 &
+    smoke_gw_pid=$!
+    sleep 2
+    curl -s -c /tmp/smoke.cj -o /dev/null -d "password=password123&next=/" http://127.0.0.1:3081/fnos-access/login
+    smoke_code="$(curl -s --compressed -b /tmp/smoke.cj -c /tmp/smoke.cj -L -H "Accept: text/html" -o /tmp/smoke.html -w "%{http_code}" http://127.0.0.1:3081/)"
+    smoke_page="$(curl -s --compressed -b /tmp/smoke.cj -H "Accept: text/html" -o /tmp/gw-index.html -w "%{http_code}" http://127.0.0.1:3081/)"
+    kill "$smoke_gw_pid" "$smoke_pid" 2>/dev/null || true
+    wait "$smoke_gw_pid" "$smoke_pid" 2>/dev/null || true
+    if [ "$smoke_code" != "200" ] || [ "$smoke_page" != "200" ] || ! grep -q "__DSH_BOOT__" /tmp/smoke.html; then
+      echo "runtime smoke failed: first=$smoke_code index=$smoke_page" >&2
+      cat /tmp/smoke.log /tmp/smoke-gw.log >&2
       exit 1
     fi
-    echo "ok runtime smoke: token exchange and web index"
+    echo "ok runtime smoke: token exchange, gzip HTML and web index"
 
     tar -czf /work/runtime.tgz package.json package-lock.json node_modules
   '
