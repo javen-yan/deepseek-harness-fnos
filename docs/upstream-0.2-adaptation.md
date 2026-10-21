@@ -118,3 +118,19 @@
 
 结论：这类插件需要作者按新版客户端服务迁移，封装层无法也不应该替它做兼容。
 临时处理是从 profile 中移除该插件（见 README 的故障排查）。
+
+## 7. 旧版本遗留的内置插件副本
+
+`382b830` 之前，应用通过 `dsh plugin --profile web add dshmarket` 把插件市场装进
+`profiles/web/node_modules`。之后改成 runtime 内置，但旧的 profile 副本不会被自动删除。
+Node 解析 bundle 代码时优先用 profile 副本，而 bundle patch 从 runtime 读取，于是会
+出现“旧代码 + 新 patch”的版本错配。
+
+`profile-bootstrap.mjs` 现在会在启动时删除这些遗留副本：
+
+- `profiles/web/node_modules/dshmarket`
+- `profiles/web/node_modules/@fnos/deepseek-harness-gateway`
+- `profiles/web/node_modules/@fnos/dsh-fnos-access`
+
+然后把 runtime 的 `dshmarket` 以软链形式放到 `$DSH_HOME/profiles/node_modules`。
+用户自己安装的其他插件不受影响。

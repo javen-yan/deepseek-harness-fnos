@@ -216,9 +216,36 @@ function linkRuntimeBundle(bundleName) {
   log(`linked bundled plugin ${bundleName} into ${sharedModules}`);
 }
 
+// Older fnOS releases installed dshmarket (and briefly the gateway) with
+// `dsh plugin --profile web add`, which leaves a real copy inside the profile.
+// Node resolves that copy before the runtime, so a stale dshmarket would load
+// its old code against the new bundle patch. Remove it and use the bundled one.
+function removeStaleProfileCopy(profileDir, bundleName) {
+  const segments = bundleName.split("/");
+  const target = path.join(profileDir, "node_modules", ...segments);
+  const runtimeSource = path.join(runtimeDir, "node_modules", ...segments);
+
+  let stat;
+  try {
+    stat = fs.lstatSync(target);
+  } catch {
+    return;
+  }
+  if (stat.isSymbolicLink()) {
+    const link = fs.readlinkSync(target);
+    if (path.resolve(path.dirname(target), link) === runtimeSource) return;
+  }
+  fs.rmSync(target, { recursive: true, force: true });
+  log(`removed stale profile copy of ${bundleName}: ${target}`);
+}
+
 const profileDir = resolveProfileDir("web", dshHome);
 await migrateLegacyModuleLayout(profileDir, runtimePackage, dshHome);
 initProfileCompat(initProfile, profileDir, PROFILE_TEMPLATES.web);
+
+for (const legacyBundle of ["dshmarket", "@fnos/deepseek-harness-gateway", "@fnos/dsh-fnos-access"]) {
+  removeStaleProfileCopy(profileDir, legacyBundle);
+}
 
 const manifestBefore = readProfileManifest("deepseek-harness-fnos", profileDir);
 const manifest = structuredClone(manifestBefore);
