@@ -18,9 +18,17 @@ if (dshmarketVersion && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(dshmarketVer
   process.exit(1);
 }
 
+const { blockedReason } = require("./dsh-version-policy");
+
 const packageJsonPath = path.join(rootDir, "app", "package.json");
 const packageLockPath = path.join(rootDir, "app", "package-lock.json");
 const manifestPath = path.join(rootDir, "manifest");
+const blocked = blockedReason(dshVersion);
+if (blocked !== undefined) {
+  console.error(`Refusing @deepseek-ai/dsh ${dshVersion}: ${blocked}`);
+  process.exit(2);
+}
+
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 const currentAppVersion = packageJson.version || "";
 const currentVersionMatch = currentAppVersion.match(/^(.*)-(\d+)$/);

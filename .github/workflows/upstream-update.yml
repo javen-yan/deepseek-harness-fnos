@@ -18,6 +18,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: upstream-update
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -63,7 +67,12 @@ jobs:
           NEXT_APP_VERSION="${LATEST}-${NEXT_APP_REVISION}"
           echo "next_app_revision=$NEXT_APP_REVISION" >> "$GITHUB_OUTPUT"
           echo "next_app_version=$NEXT_APP_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_DSHMARKET" = "$LATEST_DSHMARKET" ]; then
+          BLOCKED="$(node -e 'process.stdout.write(require("./scripts/dsh-version-policy").blockedReason(process.argv[1]) ?? "")' "$LATEST")"
+          if [ -n "$BLOCKED" ]; then
+            echo "::warning::@deepseek-ai/dsh $LATEST is blocked: $BLOCKED"
+            echo "blocked=$BLOCKED" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$BLOCKED" ] || { [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT_DSHMARKET" = "$LATEST_DSHMARKET" ]; }; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -81,6 +90,7 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Create update PR
+        id: create-pull-request
         if: steps.versions.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
@@ -96,3 +106,17 @@ jobs:
           labels: |
             dependencies
             automated
+
+      - name: Close superseded update PRs
+        if: steps.versions.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_BRANCH: bot/update-runtime-${{ steps.versions.outputs.latest }}-dshmarket-${{ steps.versions.outputs.latest_dshmarket }}
+        run: |
+          set -euo pipefail
+          gh pr list --state open --label automated --json number,headRefName \
+            --jq '.[] | select(.headRefName != "'"$CURRENT_BRANCH"'") | .number' \
+            | while read -r pr; do
+                [ -n "$pr" ] || continue
+                gh pr close "$pr" --comment "Superseded by #${{ steps.create-pull-request.outputs.pull-request-number }} ($CURRENT_BRANCH)."
+              done

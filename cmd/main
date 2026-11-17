@@ -28,6 +28,7 @@ GATEWAY_PORT="${GATEWAY_PORT:-3081}"
 GATEWAY_HOST="${GATEWAY_HOST:-0.0.0.0}"
 GATEWAY_SESSION_DAYS="${GATEWAY_SESSION_DAYS:-30}"
 ADMIN_PASSWORD_FILE="$DATA_DIR/gateway/admin-password.json"
+DSH_LAUNCH_TOKEN_FILE="$DATA_DIR/gateway/dsh-launch-token"
 DSH_BIN="$RUNTIME_DIR/node_modules/.bin/dsh"
 PNPM_BIN="$RUNTIME_DIR/node_modules/pnpm/bin/pnpm.mjs"
 NODE_GYP_BIN="$RUNTIME_DIR/node_modules/node-gyp/bin/node-gyp.js"
@@ -58,6 +59,16 @@ load_gateway_config() {
   esac
   case "$GATEWAY_SESSION_DAYS" in
     ''|*[!0-9]*) write_error "GATEWAY_SESSION_DAYS must be a number."; exit 1 ;;
+    *) ;;
+  esac
+
+  # DSH 0.2.1+ rejects wildcard listeners. The app binds one concrete loopback
+  # address and the edge proxy owns the LAN side.
+  case "$HOST" in
+    ""|0.0.0.0|"::"|"[::]"|"*")
+      write_error "DSH_HOST must name one concrete local address, not a wildcard: $HOST"
+      exit 1
+      ;;
     *) ;;
   esac
 }
@@ -277,6 +288,28 @@ build_trusted_host_args() {
   done
 }
 
+# DSH 0.1.2+ authenticates the Web UI with a per-process launch token printed
+# as `dsh web: http://.../?token=...`. The token mints a signed cookie that
+# survives restarts, so the edge proxy only needs the current token to
+# bootstrap a browser that has no valid DSH cookie yet.
+capture_dsh_launch_token() {
+  log_offset="$1"
+  deadline=$(( $(date +%s) + 30 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    token="$(tail -c +"$((log_offset + 1))" "$LOGFILE" 2>/dev/null \
+      | grep -oE 'dsh web: https?://[^[:space:]]*[?&]token=[A-Za-z0-9_-]+' \
+      | tail -1 | sed -E 's/.*token=//')"
+    if [ -n "$token" ]; then
+      mkdir -p "$(dirname "$DSH_LAUNCH_TOKEN_FILE")"
+      ( umask 077; printf '%s' "$token" > "$DSH_LAUNCH_TOKEN_FILE" )
+      chmod 600 "$DSH_LAUNCH_TOKEN_FILE" 2>/dev/null || true
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 bootstrap_profile() {
   if [ ! -f "$PROFILE_BOOTSTRAP" ]; then
     write_error "DeepSeek Harness profile bootstrap is missing. Reinstall the app and check $DATA_DIR/logs/install.log."
@@ -321,12 +354,25 @@ start_app() {
   if ! is_dsh_running; then
     build_trusted_host_args
 
+    log_offset=0
+    if [ -f "$LOGFILE" ]; then
+      log_offset="$(wc -c < "$LOGFILE" | tr -d ' ')"
+    fi
+    dsh_public_url_args=""
+    if [ -n "${DSH_PUBLIC_URL:-}" ]; then
+      dsh_public_url_args="--public-url $DSH_PUBLIC_URL"
+    fi
+
     current_dir="$(pwd)"
     cd "$WORKSPACE_DIR"
-    nohup "$NODE_BIN" "$DSH_BIN" web --host "$HOST" --port "$PORT" $TRUSTED_HOST_ARGS >> "$LOGFILE" 2>&1 &
+    nohup "$NODE_BIN" "$DSH_BIN" web --host "$HOST" --port "$PORT" --no-open $dsh_public_url_args $TRUSTED_HOST_ARGS >> "$LOGFILE" 2>&1 &
     echo "$!" > "$PIDFILE"
     cd "$current_dir"
     sleep 2
+    # Capture in the background: the proxy starts immediately and can mint the
+    # browser cookie as soon as the token file appears.
+    ( capture_dsh_launch_token "$log_offset" || \
+      echo "$(date '+%Y-%m-%d %H:%M:%S') - warning: DSH launch token was not printed; browser access will need a restart." >> "$LOGFILE" ) &
   fi
 
   if ! is_dsh_running; then
@@ -343,6 +389,7 @@ start_app() {
     GATEWAY_LOGFILE="$PROXY_LOGFILE" \
     GATEWAY_ACCESS_LOGFILE="$PROXY_ACCESS_LOGFILE" \
     GATEWAY_WRITABLE_DIRS="$WRITABLE_DIRS" \
+    DSH_LAUNCH_TOKEN_FILE="$DSH_LAUNCH_TOKEN_FILE" \
     INSTALL_LOGFILE="$LOG_DIR/install.log" \
     GATEWAY_INSTALL_LOGFILE="$GATEWAY_INSTALL_LOGFILE" \
     DSH_LOGFILE="$LOGFILE" \
